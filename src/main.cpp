@@ -4148,7 +4148,7 @@ void playtask ( void * parameter )
      //.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
      .communication_format = I2S_COMM_FORMAT_I2S,
      .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,                  // High interrupt priority
-     .dma_buf_count        = 8,
+     .dma_buf_count        = 16,
      .dma_buf_len          = 512,
      .use_apll             = 0,
      .tx_desc_auto_clear   = true,                                  // clear tx descriptor on underflow
