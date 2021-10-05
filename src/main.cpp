@@ -72,10 +72,11 @@
 // 06-08-2021, ES: Copy from version 1.
 // 06-08-2021, ES: Use SPIFFS and Async webserver.
 // 23-08-2021, ES: Version with software MP3/AAC decoders.
+// 05-10-2021, ES: Fixed internal DAC output, fixe OTA update
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Mon, 05 Oct 2021 17:25:00 GMT"
+#define VERSION     "Tue, 05 Oct 2021 09:20:00 GMT"
 // ESP32-Radio can be updated (OTA) to the latest version from a remote server.
 // The download uses the following server and files:
 //
@@ -162,7 +163,8 @@ void        handle_settings ( AsyncWebServerRequest *request ) ;
 //**************************************************************************************************
 //
 
-enum qdata_type { QDATA, QSTARTSONG, QSTOPSONG } ;    // datatyp in qdata_struct
+enum qdata_type { QDATA, QSTARTSONG, QSTOPSONG,       // datatyp in qdata_struct
+                  QSTOPTASK } ;
 struct qdata_struct
 {
   int datatyp ;                                       // Identifier
@@ -290,6 +292,7 @@ String            ipaddress ;                            // Own IP-address
 int               bitrate ;                              // Bitrate in kb/sec
 int               mbitrate ;                             // Measured bitrate
 int               metaint = 0 ;                          // Number of databytes between metadata
+bool              internal_dac ;                         // True if internal DAC used
 int16_t           currentpreset = -1 ;                   // Preset station playing
 String            host ;                                 // The URL to connect to or file to play
 String            playlist ;                             // The URL of the specified playlist
@@ -562,9 +565,7 @@ mqttpubc         mqttpub ;                                    // Instance for mq
 #ifdef NEXTION
  #include "NEXTION.h"                                    // For NEXTION display
 #endif
-//
-// Include software for OTA update
-#include "otastuff.h"
+
 
 //**************************************************************************************************
 //                                           B L S E T                                             *
@@ -1394,8 +1395,12 @@ void otastart()
   char* p ;
 
   p = dbgprint ( "OTA update Started" ) ;
-  tftset ( 2, p ) ;                                   // Set screen segment bottom part
-  queuefunc ( QSTOPSONG ) ;                        // Queue a request to stop the song
+  tftset ( 2, p ) ;                                // Set screen segment bottom part
+  mp3client->close() ;
+  timerAlarmDisable ( timer ) ;                    // Disable the timer
+  disableCore0WDT() ;                              // Disable watchdog core 0
+  disableCore1WDT() ;                              // Disable watchdog core 1
+  queuefunc ( QSTOPTASK ) ;                        // Queue a request to stop the song
 }
 
 
@@ -2321,6 +2326,10 @@ void setup()
                                                          // Rotary encoder
   for ( i = 0 ; (pinnr = progpin[i].gpio) >= 0 ; i++ )   // Check programmable input pins
   {
+    if ( pinnr == 25 || pinnr == 26 )
+    {
+      continue ;
+    }
     pinMode ( pinnr, INPUT_PULLUP ) ;                    // Input for control button
     delay ( 10 ) ;
     // Check if pull-up active
@@ -2486,7 +2495,6 @@ void setup()
   adc1_config_channel_atten ( ADC1_CHANNEL_0, ADC_ATTEN_0db ) ;
   dataqueue = xQueueCreate ( QSIZ,                        // Create queue for communication
                              sizeof ( qdata_struct ) ) ;
-  setupota() ;                                            // Init ota update function
   xTaskCreatePinnedToCore (
     playtask,                                             // Task to play data in dataqueue.
     "Playtask",                                           // name of task.
@@ -4124,10 +4132,10 @@ void playtask ( void * parameter )
 // configuration is called data_out_num, but this pin should be connected to the "DIN" pin of the  *
 // external DAC.  The variable used to configure this pin is therefore called "i2s_din_pin".       *
 // If no pin for i2s_bck is configured, output will be sent to the internal DAC.                   *
+// Task will stop on OTA update.                                                                   *
 //**************************************************************************************************
 void playtask ( void * parameter )
 {
-  bool           internal_dac ;                                     // True if internal DAC used
   esp_err_t      pinss_err ;                                        // Result of i2s_set_pin
   i2s_port_t     i2s_num = I2S_NUM_0 ;                              // i2S port number
   i2s_config_t   i2s_config =
@@ -4137,11 +4145,14 @@ void playtask ( void * parameter )
      .sample_rate          = 44100,
      .bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT,
      .channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT,
-     .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
+     //.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
+     .communication_format = I2S_COMM_FORMAT_I2S,
      .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,                  // High interrupt priority
      .dma_buf_count        = 8,
      .dma_buf_len          = 512,
-     .use_apll             = 1
+     .use_apll             = 0,
+     .tx_desc_auto_clear   = true,                                  // clear tx descriptor on underflow
+     .fixed_mclk           = I2S_PIN_NO_CHANGE,                     // No pin for MCLK
   } ;
   i2s_pin_config_t pin_config =
   {
@@ -4151,6 +4162,7 @@ void playtask ( void * parameter )
       .data_in_num           = -1                                   // No input
   } ;
 
+  vTaskDelay ( 3000 / portTICK_PERIOD_MS ) ;                        // Start delay
   internal_dac = ( ini_block.i2s_bck_pin < 0 ) ;                    // Use internal DAC if BCK not configured
   dbgprint ( "Starting I2S playtask.." ) ;
   MP3Decoder_AllocateBuffers() ;                                    // Init HELIX buffers
@@ -4160,6 +4172,7 @@ void playtask ( void * parameter )
     i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER |                // Yes, set I2S mode
                                    I2S_MODE_TX |
                                    I2S_MODE_DAC_BUILT_IN ) ;        // Enable internal DAC
+    i2s_config.communication_format = I2S_COMM_FORMAT_I2S_MSB ;     // Only use MSB part
   }
   if ( i2s_driver_install ( i2s_num, &i2s_config, 0, NULL ) != ESP_OK )
   {
@@ -4210,12 +4223,16 @@ void playtask ( void * parameter )
           while ( xQueueReceive ( dataqueue, &inchunk, 0 ) ) ;      // Flush rest of queue
           vTaskDelay ( 500 / portTICK_PERIOD_MS ) ;                 // Pause for a short time
           break ;
+        case QSTOPTASK:
+          dbgprint ( "Stop Playtask" ) ;
+          i2s_stop ( i2s_num ) ;                                    // Stop DAC
+          vTaskDelete ( NULL ) ;                                    // Stop task
+          break ;
         default:
           break ;
       }
     }
   }
-  //vTaskDelete ( NULL ) ;                                          // Will never arrive here
 }
 #endif
 
