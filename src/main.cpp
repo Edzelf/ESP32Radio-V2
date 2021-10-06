@@ -72,11 +72,12 @@
 // 06-08-2021, ES: Copy from version 1.
 // 06-08-2021, ES: Use SPIFFS and Async webserver.
 // 23-08-2021, ES: Version with software MP3/AAC decoders.
-// 05-10-2021, ES: Fixed internal DAC output, fixe OTA update
+// 05-10-2021, ES: Fixed internal DAC output, fixed OTA update.
+// 06-10-2021, ES: Fixed AP mode.
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Tue, 05 Oct 2021 09:20:00 GMT"
+#define VERSION     "Tue, 06 Oct 2021 14:35:00 GMT"
 // ESP32-Radio can be updated (OTA) to the latest version from a remote server.
 // The download uses the following server and files:
 //
@@ -1207,9 +1208,9 @@ void setdatamode ( datamode_t newmode )
 void stop_mp3client ()
 {
   queuefunc ( QSTOPSONG ) ;                        // Queue a request to stop the song
-  while ( mp3client->connected() )
+  while ( mp3client && mp3client->connected() )    // Client active and connected?
   {
-    dbgprint ( "Stopping client" ) ;               // Stop connection to host
+    dbgprint ( "Stopping client" ) ;               // Yes, stop connection to host
     mp3client->close() ;
     delay ( 500 ) ;
   }
