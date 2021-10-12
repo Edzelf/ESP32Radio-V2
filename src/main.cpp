@@ -95,7 +95,7 @@
 #include <freertos/task.h>                                // FreeRtos task handling
 #include <driver/adc.h>                                   // ADC driver
 #include <base64.h>                                       // For Basic authentication
-#include <SPIFFS.H>                                       // Filesystem
+#include <SPIFFS.h>                                       // Filesystem
 #include "utils.h"                                        // Some handy utilities
 #ifdef DEC_HELIX_INT                                      // Software decoder using internal DAC?
   #define DEC_HELIX                                       // Yes, make sure to include software decoders

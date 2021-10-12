@@ -1,6 +1,6 @@
 // Dummytft.cpp
 // Includes for dummy display
-#include "dummytft.h"
+#include "Dummytft.h"
 
 scrseg_struct     dummytft_tftdata[TFTSECS] =               // Screen divided in 1 segment
 {                                                           // One text line is 8 pixels
