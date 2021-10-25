@@ -56,5 +56,5 @@ tonelf = 0          # Not used if DEC_HELIX is defined
 #
 volume = 45
 #
-wifi_00 = ADSL-11/DEADC0DE11
+wifi_00 = ADSL-11/pswrd
 wifi_01 = SSID/pswrd
