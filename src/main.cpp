@@ -95,8 +95,9 @@
 #include <freertos/task.h>                                // FreeRtos task handling
 #include <driver/adc.h>                                   // ADC driver
 #include <base64.h>                                       // For Basic authentication
-#include <SPIFFS.H>                                       // Filesystem
+#include <SPIFFS.h>                                       // Filesystem
 #include "utils.h"                                        // Some handy utilities
+
 #ifdef DEC_HELIX_INT                                      // Software decoder using internal DAC?
   #define DEC_HELIX                                       // Yes, make sure to include software decoders
 #endif
@@ -2254,13 +2255,13 @@ void onDisConnect ( void* arg, AsyncClient* client )
 //**************************************************************************************************
 void setup()
 {
-  int                       i ;                          // Loop control
-  int                       pinnr ;                      // Input pinnumber
-  const char*               p ;
-  byte                      mac[6] ;                     // WiFi mac address
-  char                      tmpstr[20] ;                 // For version and Mac address
-  esp_partition_iterator_t  pi ;                         // Iterator for find
-  const esp_partition_t*    ps ;                         // Pointer to partition struct
+  int                        i ;                         // Loop control
+  int                        pinnr ;                     // Input pinnumber
+  const char*                p ;
+  byte                       mac[6] ;                    // WiFi mac address
+  char                       tmpstr[20] ;                // For version and Mac address
+  esp_partition_iterator_t   pi ;                        // Iterator for find
+  const esp_partition_t*     ps ;                        // Pointer to partition struct
   
   Serial.begin ( 115200 ) ;                              // For debug
   Serial.println() ;
