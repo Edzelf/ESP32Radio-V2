@@ -395,7 +395,7 @@ void LCD2004_displayvolume ( uint8_t vol )
 //**************************************************************************************************
 void LCD2004_displaytime ( const char* str, uint16_t color )
 {
-  const char* WDAYS [] = { "???", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" } ;
+  const char* WDAYS [] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" } ;
   char        datetxt[24] ;
   static char oldstr = '\0' ;                            // To check time difference
 
