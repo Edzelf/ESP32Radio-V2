@@ -74,10 +74,11 @@
 // 23-08-2021, ES: Version with software MP3/AAC decoders.
 // 05-10-2021, ES: Fixed internal DAC output, fixed OTA update.
 // 06-10-2021, ES: Fixed AP mode.
+// 01-03-2022, ES: Fixed NEXTION display bug.
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Tue, 06 Oct 2021 14:35:00 GMT"
+#define VERSION     "Tue, 01 Feb 2022 09:20:00 GMT"
 // ESP32-Radio can be updated (OTA) to the latest version from a remote server.
 // The download uses the following server and files:
 //
@@ -2357,24 +2358,20 @@ void setup()
     attachInterrupt ( ini_block.ir_pin,                  // Interrupts will be handle by isr_IR
                       isr_IR, CHANGE ) ;
   }
-  if ( ( ini_block.tft_cs_pin >= 0  ) ||                 // Display configured?
-       ( ini_block.tft_scl_pin >= 0 ) )
+  dbgprint ( "Start display" ) ;
+  dsp_ok = dsp_begin ( INIPARS ) ;                     // Init display
+  if ( dsp_ok )                                        // Init okay?
   {
-    dbgprint ( "Start display" ) ;
-    dsp_ok = dsp_begin ( INIPARS ) ;                     // Init display
-    if ( dsp_ok )                                        // Init okay?
-    {
-      dsp_setRotation() ;                                // Yes, use landscape format
-      dsp_erase() ;                                      // Clear screen
-      dsp_setTextSize ( 1 ) ;                            // Small character font
-      dsp_setTextColor ( WHITE ) ;                       // Info in white
-      dsp_setCursor ( 0, 0 ) ;                           // Top of screen
-      dsp_print ( "Starting..." "\n" "Version:" ) ;
-      strncpy ( tmpstr, VERSION, 16 ) ;                  // Limit version length
-      dsp_println ( tmpstr ) ;
-      dsp_println ( "By Ed Smallenburg" ) ;
-      dsp_update ( enc_menu_mode == VOLUME ) ;           // Show on physical screen
-    }
+    dsp_setRotation() ;                                // Yes, use landscape format
+    dsp_erase() ;                                      // Clear screen
+    dsp_setTextSize ( 1 ) ;                              // Small character font
+    dsp_setTextColor ( WHITE ) ;                         // Info in white
+    dsp_setCursor ( 0, 0 ) ;                             // Top of screen
+    dsp_print ( "Starting..." "\n" "Version:" ) ;
+    strncpy ( tmpstr, VERSION, 16 ) ;                    // Limit version length
+    dsp_println ( tmpstr ) ;
+    dsp_println ( "By Ed Smallenburg" ) ;
+    dsp_update ( enc_menu_mode == VOLUME ) ;             // Show on physical screen
   }
   if ( ini_block.tft_bl_pin >= 0 )                       // Backlight for TFT control?
   {
