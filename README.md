@@ -7,4 +7,4 @@ New version of the well known ESP32 Radio.  Now optional I2S output!
 Updates: 
 - 05-oct-2021: Fixed internal DAC output, fixed OTA upload.
 - 06-oct-2021: Fixed AP mode.
-- 01-feb-2022: Fixed NEXTION bug.
+- 01-mar-2022: Fixed NEXTION bug.
