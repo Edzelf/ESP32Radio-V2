@@ -1,6 +1,6 @@
 //***************************************************************************************************
-//*  ESP32_Radio -- Webradio receiver for ESP32, VS1053 MP3 module and optional display.            *
-//*                 By Ed Smallenburg.                                                              *
+//*  ESP32_Radio V2 -- Webradio receiver for ESP32, VS1053 MP3 module and optional display.         *
+//*                    By Ed Smallenburg.                                                           *
 //***************************************************************************************************
 // ESP32 libraries used:  See platformio.ini
 // A library for the VS1053 (for ESP32) is not available (or not easy to find).  Therefore
@@ -9,7 +9,7 @@
 // https://github.com/schreibfaul1/ESP32-audioI2S
 //
 // See http://www.internet-radio.com for suitable stations.  Add the stations of your choice
-// to the preferences in either Esp32_radio_init.ino sketch or through the webinterface.
+// to the preferences through the webinterface.
 // You may also use the "search" page of the webinterface to find stations.
 //
 // Brief description of the program:
@@ -38,7 +38,7 @@
 //
 // The VSPI interface is used for VS1053, TFT and SD.
 //
-// Wiring. Note that this is just an example.  Pins (except 18,19 and 23 of the SPI interface)
+// Wiring. Note that this is just an example.  Pins (except 18, 19 and 23 of the SPI interface)
 // can be configured in the config page of the web interface.
 // ESP32dev Signal  Wired to LCD        Wired to VS1053      Wired to the rest
 // -------- ------  --------------      -------------------  ---------------
@@ -74,16 +74,15 @@
 // 23-08-2021, ES: Version with software MP3/AAC decoders.
 // 05-10-2021, ES: Fixed internal DAC output, fixed OTA update.
 // 06-10-2021, ES: Fixed AP mode.
-// 01-03-2022, ES: Fixed NEXTION display bug.
-//
+// 10-02-2022, ES: Included ST7789 display
+// 11-02-2022, ES: SD card implementation
+// 26-03-2022, ES: Fixed NEXTION bug
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Tue, 01 Feb 2022 09:20:00 GMT"
-// ESP32-Radio can be updated (OTA) to the latest version from a remote server.
-// The download uses the following server and files:
+#define VERSION     "Sat, 26 Mar 2022 10:50:00 GMT"
 //
-#include "config.h"                                       // Specify display type, decoder type
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
+#include "../include/config.h"                            // Specify display type, decoder type
 #include <nvs.h>                                          // Access to NVS
 #include <PubSubClient.h>                                 // MTTQ access
 #include <WiFiMulti.h>                                    // Handle multiple WiFi networks
@@ -98,7 +97,6 @@
 #include <base64.h>                                       // For Basic authentication
 #include <SPIFFS.h>                                       // Filesystem
 #include "utils.h"                                        // Some handy utilities
-
 #ifdef DEC_HELIX_INT                                      // Software decoder using internal DAC?
   #define DEC_HELIX                                       // Yes, make sure to include software decoders
 #endif
@@ -111,12 +109,14 @@
   #include "VS1053.h"                                     // Driver for VS1053
 #endif
 #define FSIF              true                            // Format SPIFFS if not existing
-#define QSIZ              500                             // Number of entries in the queue
+#define QSIZ              400                             // Number of entries in the queue
 #define NVSBUFSIZE        150                             // Max size of a string in NVS
 // Access point name if connection to WiFi network fails.  Also the hostname for WiFi and OTA.
 // Note that the password of an AP must be at least as long as 8 characters.
 // Also used for other naming.
-#define NAME              "ESP32Radio"
+#ifndef NAME                                              // Name may be defined in config.h
+  #define NAME            "ESP32-Radio"
+#endif
 #define MAXPRESETS        200                             // Max number of presets in preferences
 #define MAXMQTTCONNECTS   5                               // Maximum number of MQTT reconnects before give-up
 #define METASIZ           1024                            // Size of metaline buffer
@@ -128,10 +128,12 @@
 // "ESP32Radio/command" if mqttprefix is "ESP32Radio".
 #define MQTT_SUBTOPIC     "command"                      // Command to receive from MQTT
 //
+#define heapspace heap_caps_get_largest_free_block ( MALLOC_CAP_8BIT )
 
 //**************************************************************************************************
 // Forward declaration and prototypes of various functions.                                        *
 //**************************************************************************************************
+void        tftlog ( const char *str, bool newline = false ) ;
 void        otastart() ;
 void        showstreamtitle ( const char* ml, bool full = false ) ;
 void        handlebyte_ch ( uint8_t b ) ;
@@ -142,23 +144,24 @@ void        chomp ( String &str ) ;
 String      nvsgetstr ( const char* key ) ;
 bool        nvssearch ( const char* key ) ;
 void        mp3loop() ;
+void        sdfuncs() ;
 void        stop_mp3client () ;
-void        tftlog ( const char *str ) ;
 void        tftset ( uint16_t inx, const char *str ) ;
 void        tftset ( uint16_t inx, String& str ) ;
-void        playtask ( void * parameter ) ;             // Task to play the stream on VS1053 or HELIX decoder
-void        spftask ( void * parameter ) ;              // Task for special functions
+void        playtask ( void* parameter ) ;             // Task to play the stream on VS1053 or HELIX decoder
+void        displayinfo ( uint16_t inx ) ;
 void        gettime() ;
 void        reservepin ( int8_t rpinnr ) ;
 void        claimSPI ( const char* p ) ;                // Claim SPI bus for exclusive access
 void        releaseSPI() ;                              // Release the claim
 uint32_t    ssconv ( const uint8_t* bytes ) ;
 void        scan_content_length ( const char* metalinebf ) ;
-void        handleFileRead ( AsyncWebServerRequest *request ) ;
-void        handle_getprefs ( AsyncWebServerRequest *request ) ;
+void        handle_notfound  ( AsyncWebServerRequest *request ) ;
+void        handle_getprefs  ( AsyncWebServerRequest *request ) ;
 void        handle_saveprefs ( AsyncWebServerRequest *request ) ;
-void        handle_getdefs ( AsyncWebServerRequest *request ) ;
-void        handle_settings ( AsyncWebServerRequest *request ) ;
+void        handle_getdefs   ( AsyncWebServerRequest *request ) ;
+void        handle_settings  ( AsyncWebServerRequest *request ) ;
+void        handle_mp3list   ( AsyncWebServerRequest *request ) ;
 
 
 //**************************************************************************************************
@@ -166,11 +169,11 @@ void        handle_settings ( AsyncWebServerRequest *request ) ;
 //**************************************************************************************************
 //
 
-enum qdata_type { QDATA, QSTARTSONG, QSTOPSONG,       // datatyp in qdata_struct
+enum qdata_type { QDATA, QSTARTSONG, QSTOPSONG,       // datatyp in qdata_struct,
                   QSTOPTASK } ;
-struct qdata_struct
+struct qdata_struct                                   // Data in queue for playtask (dataqueue)
 {
-  int datatyp ;                                       // Identifier
+  qdata_type                          datatyp ;       // Identifier
   __attribute__((aligned(4))) uint8_t buf[32] ;       // Buffer for chunk of mp3 data
 } ;
 
@@ -183,25 +186,27 @@ struct ini_struct
   String         mqttpasswd ;                         // Password for MQTT authentication
   uint8_t        reqvol ;                             // Requested volume
   uint8_t        rtone[4] ;                           // Requested bass/treble settings
-  int16_t        newpreset ;                          // Requested preset
   String         clk_server ;                         // Server to be used for time of day clock
   int8_t         clk_offset ;                         // Offset in hours with respect to UTC
   int8_t         clk_dst ;                            // Number of hours shift during DST
   int8_t         ir_pin ;                             // GPIO connected to output of IR decoder
   int8_t         enc_clk_pin ;                        // GPIO connected to CLK of rotary encoder
   int8_t         enc_dt_pin ;                         // GPIO connected to DT of rotary encoder
-  int8_t         enc_sw_pin ;                         // GPIO connected to SW of rotary encoder
+  int8_t         enc_sw_pin ;                         // GPIO connected to SW of rotary encoder / ZIPPY B5
+  int8_t         enc_up_pin ;                         // GPIO connected to UP of ZIPPY B5 side switch
+  int8_t         enc_dwn_pin ;                        // GPIO connected to DOWN of ZIPPY B5 side switch
   int8_t         tft_cs_pin ;                         // GPIO connected to CS of TFT screen
   int8_t         tft_dc_pin ;                         // GPIO connected to D/C or A0 of TFT screen
   int8_t         tft_scl_pin ;                        // GPIO connected to SCL of i2c TFT screen
   int8_t         tft_sda_pin ;                        // GPIO connected to SDA of I2C TFT screen
   int8_t         tft_bl_pin ;                         // GPIO to activate BL of display
   int8_t         tft_blx_pin ;                        // GPIO to activate BL of display (inversed logic)
+  int8_t         sd_cs_pin ;                          // GPIO connected to CS of SD card
   int8_t         vs_cs_pin ;                          // GPIO connected to CS of VS1053
   int8_t         vs_dcs_pin ;                         // GPIO connected to DCS of VS1053
   int8_t         vs_dreq_pin ;                        // GPIO connected to DREQ of VS1053
-  int8_t         vs_shutdown_pin ;                    // GPIO to shut down the amplifier
-  int8_t         vs_shutdownx_pin ;                   // GPIO to shut down the amplifier (inversed logic)
+  int8_t         shutdown_pin ;                       // GPIO to shut down the amplifier
+  int8_t         shutdownx_pin ;                      // GPIO to shut down the amplifier (inversed logic)
   int8_t         spi_sck_pin ;                        // GPIO connected to SPI SCK pin
   int8_t         spi_miso_pin ;                       // GPIO connected to SPI MISO pin
   int8_t         spi_mosi_pin ;                       // GPIO connected to SPI MOSI pin
@@ -263,6 +268,7 @@ enum datamode_t { INIT = 0x1, HEADER = 0x2, DATA = 0x4,      // State for datast
 // Global variables
 int               numSsid ;                              // Number of available WiFi networks
 WiFiMulti         wifiMulti ;                            // Possible WiFi networks
+bool              ota = false ;                          // Allow OTA updates
 ini_struct        ini_block ;                            // Holds configurable data
 AsyncWebServer    cmdserver ( 80 ) ;                     // Instance of embedded webserver, port 80
 AsyncClient*      mp3client = NULL ;                     // An instance of the mp3 client
@@ -270,15 +276,15 @@ WiFiClient        wmqttclient ;                          // An instance for mqtt
 PubSubClient      mqttclient ( wmqttclient ) ;           // Client for MQTT subscriber
 TaskHandle_t      maintask ;                             // Taskhandle for main task
 TaskHandle_t      xplaytask ;                            // Task handle for playtask
-TaskHandle_t      xspftask ;                             // Task handle for special functions
 SemaphoreHandle_t SPIsem = NULL ;                        // For exclusive SPI usage
 hw_timer_t*       timer = NULL ;                         // For timer
 char              timetxt[9] ;                           // Converted timeinfo
 char              cmd[130] ;                             // Command from MQTT or Serial
-char              getreq[300] ;                          // GET comand for MP3 host
-uint8_t           tmpbuff[6000] ;                        // Input buffer for mp3 or data stream 
-QueueHandle_t     dataqueue ;                            // Queue for mp3 datastream
-QueueHandle_t     spfqueue ;                             // Queue for special functions
+const qdata_type  stopcmd = QSTOPSONG ;                  // Command for radio/SD
+const qdata_type  startcmd = QSTARTSONG ;                // Command for radio/SD
+QueueHandle_t     radioqueue = nullptr ;                 // Queue for icecast commands
+QueueHandle_t     dataqueue = nullptr ;                  // Queue for mp3 datastream
+QueueHandle_t     sdqueue = nullptr ;                    // For commands to sdfuncs
 qdata_struct      outchunk ;                             // Data to queue
 qdata_struct      inchunk ;                              // Data from queue
 uint8_t*          outqp = outchunk.buf ;                 // Pointer to buffer in outchunk
@@ -296,20 +302,21 @@ int               bitrate ;                              // Bitrate in kb/sec
 int               mbitrate ;                             // Measured bitrate
 int               metaint = 0 ;                          // Number of databytes between metadata
 bool              internal_dac ;                         // True if internal DAC used
-int16_t           currentpreset = -1 ;                   // Preset station playing
+int16_t           newpreset ;                            // Requested preset
 String            host ;                                 // The URL to connect to or file to play
-String            playlist ;                             // The URL of the specified playlist
-bool              hostreq = false ;                      // Request for new host
+String            playlist ;                             // The URL of the specified playliFDst
 bool              reqtone = false ;                      // New tone setting requested
 bool              muteflag = false ;                     // Mute output
 bool              resetreq = false ;                     // Request to reset the ESP32
 bool              updatereq = false ;                    // Request to update software from remote host
+bool              testreq = false ;                      // Request to print test info
 bool              NetworkFound = false ;                 // True if WiFi network connected
 bool              mqtt_on = false ;                      // MQTT in use
 String            networks ;                             // Found networks in the surrounding
 uint16_t          mqttcount = 0 ;                        // Counter MAXMQTTCONNECTS
 int8_t            playingstat = 0 ;                      // 1 if radio is playing (for MQTT)
 int16_t           playlist_num = 0 ;                     // Nonzero for selection from playlist
+bool              localfile = false ;                    // True if local (SD) file selected
 bool              chunked = false ;                      // Station provides chunked transfer
 int               chunkcount = 0 ;                       // Counter for chunked transfer
 String            http_getcmd ;                          // Contents of last GET command
@@ -325,6 +332,7 @@ uint32_t          clength ;                              // Content length found
 uint16_t          bltimer = 0 ;                          // Backlight time-out counter
 bool              dsp_ok = false ;                       // Display okay or not
 int               ir_intcount = 0 ;                      // For test IR interrupts
+bool              spftrigger = false ;                   // To trigger execution of special functions
 std::vector<WifiInfo_t> wifilist ;                       // List with wifi_xx info
 const esp_partition_t*  spiffs = nullptr ;               // Pointer to SPIFFS partition struct
 
@@ -335,7 +343,8 @@ esp_err_t               nvserr ;                         // Error code from nvs 
 uint32_t                nvshandle = 0 ;                  // Handle for nvs access
 uint8_t                 namespace_ID ;                   // Namespace ID found
 char                    nvskeys[MAXKEYS][16] ;           // Space for NVS keys
-std::vector<keyname_t> keynames ;                        // Keynames in NVS
+std::vector<keyname_t>  keynames ;                       // Keynames in NVS
+
 // Rotary encoder stuff
 #define sv DRAM_ATTR static volatile
 sv uint16_t       clickcount = 0 ;                       // Incremented per encoder click
@@ -345,9 +354,8 @@ sv bool           singleclick = false ;                  // True if single click
 sv bool           doubleclick = false ;                  // True if double click detected
 sv bool           tripleclick = false ;                  // True if triple click detected
 sv bool           longclick = false ;                    // True if longclick detected
-enum enc_menu_t { VOLUME, PRESET } ;                     // State for rotary encoder menu
+enum enc_menu_t { VOLUME, PRESET, TRACK } ;              // State for rotary encoder menu
 enc_menu_t        enc_menu_mode = VOLUME ;               // Default is VOLUME mode
-
 //
 struct progpin_struct                                    // For programmable input pins
 {
@@ -386,9 +394,9 @@ progpin_struct   progpin[] =                             // Input pins and progr
   { 22, false, false,  "", false },                      // Also Wire SCL
   { 23, false, false,  "", false },                      // Default for SPI MOSI
   //{ 24, true,  false,  "", false },                    // Not exposed on DEV board
-  { 25, false, false,  "", false },                      // DAC output
-  { 26, false, false,  "", false },                      // DAC output
-  { 27, false, false,  "", false },
+  { 25, false, false,  "", false },                      // DAC output / I2S output
+  { 26, false, false,  "", false },                      // DAC output / I2S output
+  { 27, false, false,  "", false },                      // I2S output
   //{ 28, true,  false,  "", false },                    // Not exposed on DEV board
   //{ 29, true,  false,  "", false },                    // Not exposed on DEV board
   //{ 30, true,  false,  "", false },                    // Not exposed on DEV board
@@ -462,7 +470,7 @@ class mqttpubc                                           // For MQTT publishing
       { "icy/name",        MQSTRING, &icyname,          false }, // Definition for MQTT_ICYNAME
       { "icy/streamtitle", MQSTRING, &icystreamtitle,   false }, // Definition for MQTT_STREAMTITLE
       { "nowplaying",      MQSTRING, &ipaddress,        false }, // Definition for MQTT_NOWPLAYING
-      { "preset" ,         MQINT8,   &currentpreset,    false }, // Definition for MQTT_PRESET
+      { "preset" ,         MQINT8,   &newpreset,        false }, // Definition for MQTT_PRESET
       { "volume" ,         MQINT8,   &ini_block.reqvol, false }, // Definition for MQTT_VOLUME
       { "playing",         MQINT8,   &playingstat,      false }, // Definition for MQTT_PLAYING
       { "playlist/pos",    MQINT16,  &playlist_num,     false }, // Definition for MQTT_PLAYLISTPOS
@@ -499,6 +507,7 @@ void mqttpubc::publishtopic()
   char        topic[80] ;                                     // Topic to send
   const char* payload ;                                       // Points to payload
   char        intvar[10] ;                                    // Space for integer parameter
+
   while ( amqttpub[i].topic )
   {
     if ( amqttpub[i].topictrigger )                           // Topic ready to send?
@@ -542,32 +551,52 @@ mqttpubc         mqttpub ;                                    // Instance for mq
 //
 // Include software for the right display
 #ifdef BLUETFT
- #include "bluetft.h"                                    // For ILI9163C or ST7735S 128x160 display
+ #include "bluetft.h"                                        // For ILI9163C or ST7735S 128x160 display
+#endif
+#ifdef ST7789
+ #include "ST7789.h"                                         // For ST7789 240x240 display
 #endif
 #ifdef ILI9341
- #include "ILI9341.h"                                    // For ILI9341 320x240 display
+ #include "ILI9341.h"                                        // For ILI9341 320x240 display
 #endif
 #ifdef OLED1306
- #include "oled.h"                                       // For OLED I2C SD1306 64x128 display
+ #include "oled.h"                                           // For OLED I2C SD1306 64x128 display
 #endif
 #ifdef OLED1309
- #include "oled.h"                                       // For OLED I2C SD1309 64x128 display
+ #include "oled.h"                                           // For OLED I2C SD1309 64x128 display
 #endif
 #ifdef OLED1106
- #include "oled.h"                                       // For OLED I2C SH1106 64x128 display
+ #include "oled.h"                                           // For OLED I2C SH1106 64x128 display
 #endif
 #ifdef LCD1602I2C
- #include "LCD1602.h"                                    // For LCD 1602 display (I2C)
+ #include "LCD1602.h"                                        // For LCD 1602 display (I2C)
 #endif
 #ifdef LCD2004I2C
- #include "LCD2004.h"                                    // For LCD 2004 display (I2C)
+ #include "LCD2004.h"                                        // For LCD 2004 display (I2C)
 #endif
 #ifdef DUMMYTFT
- #include "Dummytft.h"                                   // For Dummy display
+ #include "Dummytft.h"                                       // For Dummy display
 #endif
 #ifdef NEXTION
- #include "NEXTION.h"                                    // For NEXTION display
+ #include "NEXTION.h"                                        // For NEXTION display
 #endif
+
+// Include software for SD card.  Will include dummy if "SDCARD" is not defined
+#include "SDcard.h"                                         // For SD card interface
+
+
+//**************************************************************************************************
+//                                  M Y Q U E U E S E N D                                          *
+//**************************************************************************************************
+// Send to queue if existing.                                                                      *
+//**************************************************************************************************
+void myQueueSend ( QueueHandle_t q, const void* msg, int waittime = 0 )
+{
+  if ( q != nullptr )                                     // Check if we have a legal queue
+  {
+    xQueueSend ( q, msg, waittime ) ;                     // Queue okay, send to it
+  }
+}
 
 
 //**************************************************************************************************
@@ -733,11 +762,11 @@ void claimSPI ( const char* p )
   {
     if ( count++ > 25 )
     {
-      dbgprint ( "SPI semaphore not taken within %d ticks by CPU %d, id %s",
+      dbgprint ( "SPI semaphore not taken within %d ticks by CPU %d,"
+                 " id %s.  Claimed by %s",
                  count * ctry,
                  xPortGetCoreID(),
-                 p ) ;
-      dbgprint ( "Semaphore is claimed by %s", old_id ) ;
+                 p, old_id ) ;
     }
     if ( count >= 100 )
     {
@@ -760,14 +789,19 @@ void releaseSPI()
 
 
 //**************************************************************************************************
-//                                      Q U E U E F U N C                                          *
+//                                      Q U E U E T O P T                                          *
 //**************************************************************************************************
 // Queue a special function for the play task.                                                     *
+// These are high priority messages like stop or start.  So we make sure the message fits.         *
 //**************************************************************************************************
-void queuefunc ( int func )
+void queueToPt ( qdata_type func )
 {
   qdata_struct     specchunk ;                          // Special function to queue
 
+  if ( uxQueueSpacesAvailable ( dataqueue ) == 0 )      // Is there space?
+  {
+    xQueueReceive ( sdqueue, &specchunk, 0 ) ;          // No, take out one element
+  }
   specchunk.datatyp = func ;                            // Put function in datatyp
   xQueueSendToFront ( dataqueue, &specchunk, 200 ) ;    // Send to queue (First Out)
 }
@@ -887,7 +921,7 @@ void IRAM_ATTR timer10sec()
            ( playlist_num > 0 ) )                 // Or playlist active?
       {
         datamode = STOPREQD ;                     // Stop player
-        ini_block.newpreset++ ;                   // Yes, try next channel
+        newpreset++ ;                             // Yes, try next channel
       }
       morethanonce++ ;                            // Count the fails
     }
@@ -914,6 +948,7 @@ void IRAM_ATTR timer100()
   sv int16_t   eqcount = 0 ;                      // Counter for equal number of clicks
   sv int16_t   oldclickcount = 0 ;                // To detect difference
 
+  spftrigger = true ;                             // Activate spfuncs
   if ( ++count10sec == 100  )                     // 10 seconds passed?
   {
     timer10sec() ;                                // Yes, do 10 second procedure
@@ -941,16 +976,16 @@ void IRAM_ATTR timer100()
     }
   }
   // Handle rotary encoder. Inactivity counter will be reset by encoder interrupt
-  if ( ++enc_inactivity == 36000 )                // Count inactivity time
+  if ( enc_inactivity < 36000 )                   // Count inactivity time, but limit to 36000
   {
-    enc_inactivity = 1000 ;                       // Prevent wrap
+    enc_inactivity++ ;
   }
-  // Now detection of single/double click of rotary encoder switch
+  // Now detection of single/double click of rotary encoder switch or ZIPPY B5
   if ( clickcount )                               // Any click?
   {
     if ( oldclickcount == clickcount )            // Yes, stable situation?
     {
-      if ( ++eqcount == 4 )                       // Long time stable?
+      if ( ++eqcount == 6 )                       // Long time stable?
       {
         eqcount = 0 ;
         if ( clickcount > 2 )                     // Triple click?
@@ -1034,7 +1069,7 @@ void IRAM_ATTR isr_IR()
 //**************************************************************************************************
 //                                          I S R _ E N C _ S W I T C H                            *
 //**************************************************************************************************
-// Interrupts received from rotary encoder switch.                                                 *
+// Interrupts received from rotary encoder switch or ZIPPY B5.                                     *
 //**************************************************************************************************
 void IRAM_ATTR isr_enc_switch()
 {
@@ -1042,22 +1077,25 @@ void IRAM_ATTR isr_enc_switch()
   sv bool         sw_state ;                               // True is pushed (LOW)
   bool            newstate ;                               // Current state of input signal
   uint32_t        newtime ;                                // Current timestamp
+  uint32_t        dtime ;                                  // Time difference with previous interrupt
 
-  // Read current state of SW pin
   newstate = ( digitalRead ( ini_block.enc_sw_pin ) == LOW ) ;
-  newtime = millis() ;
-  if ( newtime == oldtime )                                // Debounce
+  newtime = xTaskGetTickCount() ;                          // Time of last interrupt
+  dtime = ( newtime - oldtime ) & 0xFFFF ;                 // Compute delta
+  if ( dtime < 50 )                                        // Debounce
   {
-    return ;
+    return ;                                               // Ignore bouncing
   }
   if ( newstate != sw_state )                              // State changed?
   {
+    oldtime = newtime ;                                    // Time of change for next compare
     sw_state = newstate ;                                  // Yes, set current (new) state
     if ( !sw_state )                                       // SW released?
     {
-      if ( ( newtime - oldtime ) > 1000 )                  // More than 1 second?
+      if ( ( dtime ) > 2000 )                              // More than 2 second?
       {
         longclick = true ;                                 // Yes, register longclick
+        clickcount = 0 ;                                   // Forget normal count
       }
       else
       {
@@ -1066,66 +1104,92 @@ void IRAM_ATTR isr_enc_switch()
       enc_inactivity = 0 ;                                 // Not inactive anymore
     }
   }
-  oldtime = newtime ;                                      // For next compare
 }
 
-
-//**************************************************************************************************
-//                                          I S R _ E N C _ T U R N                                *
-//**************************************************************************************************
-// Interrupts received from rotary encoder (clk signal) knob turn.                                 *
-// The encoder is a Manchester coded device, the outcomes (-1,0,1) of all the previous state and   *
-// actual state are stored in the enc_states[].                                                    *
-// Full_status is a 4 bit variable, the upper 2 bits are the previous encoder values, the lower    *
-// ones are the actual ones.                                                                       *
-// 4 bits cover all the possible previous and actual states of the 2 PINs, so this variable is     *
-// the index enc_states[].                                                                         *
-// No debouncing is needed, because only the valid states produce values different from 0.         *
-// Rotation is 4 if position is moved from one fixed position to the next, so it is devided by 4.  *
-//**************************************************************************************************
-void IRAM_ATTR isr_enc_turn()
-{
-  sv uint32_t     old_state = 0x0001 ;                          // Previous state
-  sv int16_t      locrotcount = 0 ;                             // Local rotation count
-  uint8_t         act_state = 0 ;                               // The current state of the 2 PINs
-  uint8_t         inx ;                                         // Index in enc_state
-  sv const int8_t enc_states [] =                               // Table must be in DRAM (iram safe)
-  { 0,                    // 00 -> 00
-    -1,                   // 00 -> 01                           // dt goes HIGH
-    1,                    // 00 -> 10
-    0,                    // 00 -> 11
-    1,                    // 01 -> 00                           // dt goes LOW
-    0,                    // 01 -> 01
-    0,                    // 01 -> 10
-    -1,                   // 01 -> 11                           // clk goes HIGH
-    -1,                   // 10 -> 00                           // clk goes LOW
-    0,                    // 10 -> 01
-    0,                    // 10 -> 10
-    1,                    // 10 -> 11                           // dt goes HIGH
-    0,                    // 11 -> 00
-    1,                    // 11 -> 01                           // clk goes LOW
-    -1,                   // 11 -> 10                           // dt goes HIGH
-    0                     // 11 -> 11
-  } ;
-  // Read current state of CLK, DT pin. Result is a 2 bit binary number: 00, 01, 10 or 11.
-  act_state = ( digitalRead ( ini_block.enc_clk_pin ) << 1 ) +
-              digitalRead ( ini_block.enc_dt_pin ) ;
-  inx = ( old_state << 2 ) + act_state ;                        // Form index in enc_states
-  locrotcount += enc_states[inx] ;                              // Get delta: 0, +1 or -1
-  if ( locrotcount == 4 )
+#ifdef ZIPPYB5
+  //**************************************************************************************************
+  //                                          I S R _ E N C _ T U R N                                *
+  //**************************************************************************************************
+  // Interrupts received from ZIPPY B5 side switch (clk signal) knob turn.                           *
+  //**************************************************************************************************
+  void IRAM_ATTR isr_enc_turn()
   {
-    rotationcount++ ;                                           // Divide by 4
-    locrotcount = 0 ;
-  }
-  else if ( locrotcount == -4 )
-  {
-    rotationcount-- ;                                           // Divide by 4
-    locrotcount = 0 ;
-  }
-  old_state = act_state ;                                       // Remember current status
-  enc_inactivity = 0 ;
-}
+    sv uint32_t     trig_time = 0 ;                               // For debounce
+    uint32_t        new_time ;                                    // New time
 
+    new_time = xTaskGetTickCount() ;                              // Get time
+    if ( new_time <= trig_time )                                  // For debounce
+    {
+      return ;                                                    // No action
+    }
+    trig_time = new_time + 300 ;                                  // Dead time 
+    if ( digitalRead ( ini_block.enc_up_pin ) == LOW )            // Up pin activated?
+    {
+      rotationcount++ ;
+    }
+    else if ( digitalRead ( ini_block.enc_dwn_pin ) == LOW )      // Down pin activated?
+    {
+      rotationcount-- ;
+    }
+    enc_inactivity = 0 ;                                          // Mark activity
+  }
+#else
+  //**************************************************************************************************
+  //                                          I S R _ E N C _ T U R N                                *
+  //**************************************************************************************************
+  // Interrupts received from rotary encoder (clk signal) knob turn.                                 *
+  // The encoder is a Manchester coded device, the outcomes (-1,0,1) of all the previous state and   *
+  // actual state are stored in the enc_states[].                                                    *
+  // Full_status is a 4 bit variable, the upper 2 bits are the previous encoder values, the lower    *
+  // ones are the actual ones.                                                                       *
+  // 4 bits cover all the possible previous and actual states of the 2 PINs, so this variable is     *
+  // the index enc_states[].                                                                         *
+  // No debouncing is needed, because only the valid states produce values different from 0.         *
+  // Rotation is 4 if position is moved from one fixed position to the next, so it is devided by 4.  *
+  //**************************************************************************************************
+  void IRAM_ATTR isr_enc_turn()
+  {
+    sv uint32_t     old_state = 0x0001 ;                          // Previous state
+    sv int16_t      locrotcount = 0 ;                             // Local rotation count
+    uint8_t         act_state = 0 ;                               // The current state of the 2 PINs
+    uint8_t         inx ;                                         // Index in enc_state
+    sv const int8_t enc_states [] =                               // Table must be in DRAM (iram safe)
+    { 0,                    // 00 -> 00
+      -1,                   // 00 -> 01                           // dt goes HIGH
+      1,                    // 00 -> 10
+      0,                    // 00 -> 11
+      1,                    // 01 -> 00                           // dt goes LOW
+      0,                    // 01 -> 01
+      0,                    // 01 -> 10
+      -1,                   // 01 -> 11                           // clk goes HIGH
+      -1,                   // 10 -> 00                           // clk goes LOW
+      0,                    // 10 -> 01
+      0,                    // 10 -> 10
+      1,                    // 10 -> 11                           // dt goes HIGH
+      0,                    // 11 -> 00
+      1,                    // 11 -> 01                           // clk goes LOW
+      -1,                   // 11 -> 10                           // dt goes HIGH
+      0                     // 11 -> 11
+    } ;
+    // Read current state of CLK, DT pin. Result is a 2 bit binary number: 00, 01, 10 or 11.
+    act_state = ( digitalRead ( ini_block.enc_clk_pin ) << 1 ) +
+                digitalRead ( ini_block.enc_dt_pin ) ;
+    inx = ( old_state << 2 ) + act_state ;                        // Form index in enc_states
+    locrotcount += enc_states[inx] ;                              // Get delta: 0, +1 or -1
+    if ( locrotcount == 4 )
+    {
+      rotationcount++ ;                                           // Divide by 4
+      locrotcount = 0 ;
+    }
+    else if ( locrotcount == -4 )
+    {
+      rotationcount-- ;                                           // Divide by 4
+      locrotcount = 0 ;
+    }
+    old_state = act_state ;                                       // Remember current status
+    enc_inactivity = 0 ;                                          // Mark activity
+  }
+#endif
 
 //**************************************************************************************************
 //                                S H O W S T R E A M T I T L E                                    *
@@ -1142,7 +1206,7 @@ void showstreamtitle ( const char *ml, bool full )
   if ( strstr ( ml, "StreamTitle=" ) )
   {
     dbgprint ( "Streamtitle found, %d bytes", strlen ( ml ) ) ;
-    dbgprint ( ml ) ;
+    //dbgprint ( ml ) ;
     p1 = (char*)ml + 12 ;                       // Begin of artist and title
     if ( ( p2 = strstr ( ml, ";" ) ) )          // Search for end of title
     {
@@ -1209,7 +1273,7 @@ void setdatamode ( datamode_t newmode )
 //**************************************************************************************************
 void stop_mp3client ()
 {
-  queuefunc ( QSTOPSONG ) ;                        // Queue a request to stop the song
+  queueToPt ( QSTOPSONG ) ;                        // Queue a request to stop the song
   while ( mp3client && mp3client->connected() )    // Client active and connected?
   {
     dbgprint ( "Stopping client" ) ;               // Yes, stop connection to host
@@ -1229,13 +1293,16 @@ bool connecttohost()
   int         inx ;                                 // Position of ":" in hostname
   uint16_t    port = 80 ;                           // Port number for host
   String      extension = "/" ;                     // May be like "/mp3" in "skonto.ls.lv:8002/mp3"
-  String      hostwoext = host ;                    // Host without extension and portnumber
+  String      hostwoext ;                           // Host without extension and portnumber
   String      auth  ;                               // For basic authentication
+  char        getreq[300] ;                         // GET comand for MP3 host
   int         retrycount = 0 ;                      // Count for connect
 
   stop_mp3client() ;                                // Disconnect if still connected
-  dbgprint ( "Connect to new host %s", host.c_str() ) ;
-  tftset ( 0, "ESP32-Radio" ) ;                     // Set screen segment text top line
+  chomp ( host ) ;                                  // Do some filtering
+  hostwoext = host ;                                // Assume host does not have extension
+  dbgprint ( "Connect to host %s", host.c_str() ) ;
+  tftset ( 0, NAME ) ;                              // Set screen segment text top line
   tftset ( 1, "" ) ;                                // Clear song and artist
   displaytime ( "" ) ;                              // Clear time on TFT screen
   setdatamode ( INIT ) ;                            // Start default in metamode
@@ -1300,7 +1367,7 @@ bool connecttohost()
       dbgprint ( "send GET command" ) ;
       mp3client->write ( getreq, strlen ( getreq ) ) ;    // Send get request
     }
-    return true ;                                           // Send is probably okay
+    return true ;                                         // Send is probably okay
   }
   dbgprint ( "Request %s failed!", host.c_str() ) ;
   return false ;
@@ -1336,9 +1403,8 @@ uint32_t ssconv ( const uint8_t* bytes )
 //**************************************************************************************************
 bool connectwifi()
 {
-  char*      pfs ;                                      // Pointer to formatted string
-  char*      pfs2 ;                                     // Pointer to formatted string
-  bool       localAP = false ;                          // True if only local AP is left
+  bool        localAP = false ;                         // True if only local AP is left
+  const char* pIP ;                                     // poiter to IP address
 
   WifiInfo_t winfo ;                                    // Entry from wifilist
 
@@ -1370,23 +1436,28 @@ bool connectwifi()
   }
   if ( localAP )                                        // Must setup local AP?
   {
-    dbgprint ( "WiFi Failed!  Trying to setup AP with name %s and password %s.", NAME, NAME ) ;
+    dbgprint ( "WiFi Failed!  Trying to setup AP with"
+               " name %s and password %s.",
+               NAME, NAME ) ;
     WiFi.softAP ( NAME, NAME ) ;                        // This ESP will be an AP
-    pfs = dbgprint ( "IP = 192.168.4.1" ) ;             // Address for AP
   }
   else
   {
-    ipaddress = WiFi.localIP().toString() ;             // Form IP address
-    pfs2 = dbgprint ( "Connected to %s", WiFi.SSID().c_str() ) ;
-    tftlog ( pfs2 ) ;
-    pfs = dbgprint ( "IP = %s", ipaddress.c_str() ) ;   // String to dispay on TFT
+    tftlog ( "SSID = " ) ;                              // Show SSID on display
+    tftlog ( WiFi.SSID().c_str(), true ) ;
+    dbgprint ( "SSID = %s",                             // Format string with SSID connected to
+                      WiFi.SSID().c_str() ) ;
   }
-  tftlog ( pfs ) ;                                      // Show IP
-  delay ( 3000 ) ;                                      // Allow user to read this
-  tftlog ( "\f" ) ;                                     // Select new page if NEXTION 
+  ipaddress = WiFi.localIP().toString() ;               // Form IP address
+  pIP = ipaddress.c_str() ;                             // As c-string
+  dbgprint ( "IP = %s", pIP ) ;
+  tftlog ( "IP = " ) ;                                  // Show IP
+  tftlog ( pIP, true ) ;
+  #ifdef NEXTION
+    dsp_println ( "\f" ) ;                              // Select new page if NEXTION 
+  #endif
   return ( localAP == false ) ;                         // Return result of connection
 }
-
 
 //**************************************************************************************************
 //                                           O T A S T A R T                                       *
@@ -1395,15 +1466,60 @@ bool connectwifi()
 //**************************************************************************************************
 void otastart()
 {
-  char* p ;
+  const char* p = "OTA update Started" ;
 
-  p = dbgprint ( "OTA update Started" ) ;
+  dbgprint ( p ) ;                                 // Shaow event for debug
   tftset ( 2, p ) ;                                // Set screen segment bottom part
   mp3client->close() ;
   timerAlarmDisable ( timer ) ;                    // Disable the timer
   disableCore0WDT() ;                              // Disable watchdog core 0
   disableCore1WDT() ;                              // Disable watchdog core 1
-  queuefunc ( QSTOPTASK ) ;                        // Queue a request to stop the song
+  queueToPt ( QSTOPTASK ) ;                        // Queue a request to stop the song
+}
+
+
+//**************************************************************************************************
+//                                           O T A E R R O R                                       *
+//**************************************************************************************************
+// Update via WiFi has an error.                                                                   *
+//**************************************************************************************************
+void otaerror ( ota_error_t error)
+{
+  dbgprint ( "OTA error %d", error ) ;
+  tftset ( 2, "OTA error!" ) ;                        // Set screen segment bottom part
+}
+
+
+//**************************************************************************************************
+//                                           O T A H A N D L E                                     *
+//**************************************************************************************************
+// Do OTA handling.                                                                                *
+// It seems that OTA handling often crashes the software.  Therefore it is mad optionally.         *
+//**************************************************************************************************
+void otaHandle()
+{
+  if ( ota )                                       // OTA enabled?
+  {
+    ArduinoOTA.handle() ;                          // Check for OTA
+  }
+}
+
+
+//**************************************************************************************************
+//                                           O T A I N I T                                         *
+//**************************************************************************************************
+// Init OTA handling.                                                                              *
+// It seems that OTA handling often crashes the software.  Therefore it is mad optionally.         *
+//**************************************************************************************************
+void otaInit()
+{
+  if ( ota )
+  {
+    ArduinoOTA.setHostname ( NAME ) ;                    // Set the hostname
+    ArduinoOTA.onStart ( otastart ) ;
+    ArduinoOTA.onError ( otaerror ) ;
+    ArduinoOTA.begin() ;                                 // Allow update over the air
+  }
 }
 
 
@@ -1447,15 +1563,15 @@ String readhostfrompref()
   String contents = "" ;                                // Result of search
   int    maxtry = 0 ;                                   // Limit number of tries
 
-  while ( ( contents = readhostfrompref ( ini_block.newpreset ) ) == "" )
+  while ( ( contents = readhostfrompref ( newpreset ) ) == "" )
   {
     if ( ++maxtry >= MAXPRESETS )
     {
       return "" ;
     }
-    if ( ++ini_block.newpreset >= MAXPRESETS )          // Next or wrap to 0
+    if ( ++newpreset >= MAXPRESETS )                    // Next or wrap to 0
     {
-      ini_block.newpreset = 0 ;
+      newpreset = 0 ;
     }
   }
   // Get the contents
@@ -1554,7 +1670,7 @@ void reservepin ( int8_t rpinnr )
   {
     if ( pin == rpinnr )                                    // Entry found?
     {
-      //dbgprint ( "GPIO%02d unavailabe for 'touch'-command", pin ) ;
+     //dbgprint ( "GPIO%02d unavailabe for 'touch'-command", pin ) ;
       touchpin[i].reserved = true ;                         // Yes, pin is reserved now
       break ;                                               // No need to continue
     }
@@ -1578,8 +1694,10 @@ void readIOprefs()
   };
   struct iosetting klist[] = {                            // List of I/O related keys
     { "pin_ir",        &ini_block.ir_pin,           -1 },
-    { "pin_enc_clk",   &ini_block.enc_clk_pin,      -1 },
-    { "pin_enc_dt",    &ini_block.enc_dt_pin,       -1 },
+    { "pin_enc_clk",   &ini_block.enc_clk_pin,      -1 }, // Rotary encoder CLK
+    { "pin_enc_dt",    &ini_block.enc_dt_pin,       -1 }, // Rotary encoder DT
+    { "pin_enc_up",    &ini_block.enc_up_pin,       -1 }, // ZIPPY B5 side switch up
+    { "pin_enc_dwn",   &ini_block.enc_dwn_pin,      -1 }, // ZIPPY B5 side switch down
     { "pin_enc_sw",    &ini_block.enc_sw_pin,       -1 },
     { "pin_tft_cs",    &ini_block.tft_cs_pin,       -1 }, // Display SPI version
     { "pin_tft_dc",    &ini_block.tft_dc_pin,       -1 }, // Display SPI version
@@ -1587,11 +1705,12 @@ void readIOprefs()
     { "pin_tft_sda",   &ini_block.tft_sda_pin,      -1 }, // Display I2C version
     { "pin_tft_bl",    &ini_block.tft_bl_pin,       -1 }, // Display backlight
     { "pin_tft_blx",   &ini_block.tft_blx_pin,      -1 }, // Display backlight (inversed logic)
+    { "pin_sd_cs",     &ini_block.sd_cs_pin,        -1 }, // SD card select
     { "pin_vs_cs",     &ini_block.vs_cs_pin,        -1 }, // VS1053 pins
     { "pin_vs_dcs",    &ini_block.vs_dcs_pin,       -1 },
     { "pin_vs_dreq",   &ini_block.vs_dreq_pin,      -1 },
-    { "pin_shutdown",  &ini_block.vs_shutdown_pin,  -1 }, // Amplifier shut-down pin
-    { "pin_shutdownx", &ini_block.vs_shutdownx_pin, -1 }, // Amplifier shut-down pin (inversed logic)
+    { "pin_shutdown",  &ini_block.shutdown_pin,     -1 }, // Amplifier shut-down pin
+    { "pin_shutdownx", &ini_block.shutdownx_pin,    -1 }, // Amplifier shut-down pin (inversed logic)
     { "pin_i2s_bck",   &ini_block.i2s_bck_pin,      -1 }, // I2S interface pins
     { "pin_i2s_lck",   &ini_block.i2s_lck_pin,      -1 },
     { "pin_i2s_din",   &ini_block.i2s_din_pin,      -1 },
@@ -1621,9 +1740,12 @@ void readIOprefs()
       }
     }
     *p = ival ;                                           // Set pinnumber in ini_block
-    dbgprint ( "%s set to %d",                            // Show result
-               klist[i].gname,
-               ival ) ;
+    if ( ival > 0 )                                       // Only show configured pins
+    {
+      dbgprint ( "%s set to %d",                          // Show result
+                 klist[i].gname,
+                 ival ) ;
+    }
   }
 #ifdef NEXTION  
   reservepin ( NXT_RX_PIN ) ;                             // Reserve RX pin of serial port
@@ -1677,7 +1799,7 @@ String readprefs ( bool output )
   if ( i == 0 )                                             // Any key seen?
   {
     outstr = String ( "No preferences found.\n"
-                      "Use defaults or run Esp32_radio_init first.\n" ) ;
+                      "Use defaults and edit options first.\n" ) ;
   }
   return outstr ;
 }
@@ -2020,7 +2142,7 @@ String getradiostatus()
 {
   char                pnr[3] ;                           // Preset as 2 character, i.e. "03"
 
-  sprintf ( pnr, "%02d", ini_block.newpreset ) ;         // Current preset
+  sprintf ( pnr, "%02d", newpreset ) ;                   // Current preset
   return String ( "preset=" ) +                          // Add preset setting
          String ( pnr ) +
          String ( "\nvolume=" ) +                        // Add volume setting
@@ -2039,14 +2161,18 @@ String getradiostatus()
 //**************************************************************************************************
 //                                           T F T L O G                                           *
 //**************************************************************************************************
-// Log to TFT if enabled.                                                                          *
+// Log to display.                                                                                 *
 //**************************************************************************************************
-void tftlog ( const char *str )
+void tftlog ( const char *str, bool newline )
 {
   if ( dsp_ok )                                        // TFT configured?
   {
-    dsp_println ( str ) ;                              // Yes, show error on TFT
-    dsp_update ( enc_menu_mode == VOLUME ) ;           // To physical screen
+    dsp_print ( str ) ;                                // Yes, show error on TFT
+    if ( newline )
+    {
+      dsp_print ( "\n" ) ;
+    }
+    dsp_update ( true ) ;                              // To physical screen
   }
 }
 
@@ -2248,6 +2374,37 @@ void onDisConnect ( void* arg, AsyncClient* client )
   dbgprint ( "MP3 host disconnected!" ) ;
 }
 
+#ifdef bla
+void memtest()
+{
+  struct xbuf
+  {
+    uint8_t ybuf[10000] ;
+  } ;
+  uint8_t*  p ;
+  size_t    space ;
+
+  while ( ( space = heap_caps_get_largest_free_block ( MALLOC_CAP_8BIT ) ) > 20000 )
+  {
+    dbgprint ( "free space %d", space ) ;
+    p = (uint8_t*)new ( xbuf ) ;
+    for ( int i = 0 ; i < sizeof(xbuf) ; i++ )
+    {
+      p[i] = ( i / 3 ) & 0xFF ;
+    }
+    for ( int i = 0 ; i < sizeof(xbuf) ; i++ )
+    {
+      if ( p[i] != ( ( i / 3 ) & 0xFF ) )
+      {
+        dbgprint ( "Compare error, i is %d, data is %d, should be %d",
+                   i, p[i], ( i / 3 ) & 0xFF ) ;
+        delay ( 100 ) ;
+      }
+    }
+  }
+}
+#endif
+
 
 //**************************************************************************************************
 //                                           S E T U P                                             *
@@ -2264,6 +2421,8 @@ void setup()
   esp_partition_iterator_t   pi ;                        // Iterator for find
   const esp_partition_t*     ps ;                        // Pointer to partition struct
   
+  maintask = xTaskGetCurrentTaskHandle() ;               // My taskhandle
+  delay ( 3000 ) ;                                       // Wait for PlatformIO monitor to start
   Serial.begin ( 115200 ) ;                              // For debug
   Serial.println() ;
   // Print some memory and sketch info
@@ -2271,9 +2430,8 @@ void setup()
              xPortGetCoreID(),
              ESP.getCpuFreqMHz(),
              VERSION,
-             ESP.getFreeHeap() ) ;                       // Normally about 170 kB
+             heapspace ) ;                               // Normally about 300 kB
   dbgprint ( "Display type is %s", DISPLAYTYPE ) ;       // Report display option
-  maintask = xTaskGetCurrentTaskHandle() ;               // My taskhandle
   if ( !SPIFFS.begin ( FSIF ) )                          // Mount and test SPIFFS
   {
     dbgprint ( "SPIFFS Mount Error!" ) ;                 // A pity...
@@ -2329,10 +2487,10 @@ void setup()
                                                          // Rotary encoder
   for ( i = 0 ; (pinnr = progpin[i].gpio) >= 0 ; i++ )   // Check programmable input pins
   {
-    if ( pinnr == 25 || pinnr == 26 )
-    {
-      continue ;
-    }
+    //if ( pinnr == 25 || pinnr == 26 )
+    //{
+    //  continue ;
+    //}
     pinMode ( pinnr, INPUT_PULLUP ) ;                    // Input for control button
     delay ( 10 ) ;
     // Check if pull-up active
@@ -2359,19 +2517,19 @@ void setup()
                       isr_IR, CHANGE ) ;
   }
   dbgprint ( "Start display" ) ;
-  dsp_ok = dsp_begin ( INIPARS ) ;                     // Init display
-  if ( dsp_ok )                                        // Init okay?
+  dsp_ok = dsp_begin ( INIPARS ) ;                       // Init display
+  if ( dsp_ok )                                          // Init okay?
   {
-    dsp_setRotation() ;                                // Yes, use landscape format
-    dsp_erase() ;                                      // Clear screen
-    dsp_setTextSize ( 1 ) ;                              // Small character font
-    dsp_setTextColor ( WHITE ) ;                         // Info in white
+    dsp_setRotation() ;                                  // Yes, use landscape format
+    dsp_erase() ;                                        // Clear screen
+    dsp_setTextSize ( DEFTXTSIZ ) ;                      // Small character font
+    dsp_setTextColor ( GRAY ) ;                          // Info in grey
     dsp_setCursor ( 0, 0 ) ;                             // Top of screen
-    dsp_print ( "Starting..." "\n" "Version:" ) ;
+    dsp_println ( "Starting......" ) ;
     strncpy ( tmpstr, VERSION, 16 ) ;                    // Limit version length
     dsp_println ( tmpstr ) ;
     dsp_println ( "By Ed Smallenburg" ) ;
-    dsp_update ( enc_menu_mode == VOLUME ) ;             // Show on physical screen
+    dsp_update ( enc_menu_mode == VOLUME ) ;             // Show on physical screen if needed
   }
   if ( ini_block.tft_bl_pin >= 0 )                       // Backlight for TFT control?
   {
@@ -2397,34 +2555,34 @@ void setup()
     VS1053_begin ( ini_block.vs_cs_pin,                  // Make instance of player and initialize
                    ini_block.vs_dcs_pin,
                    ini_block.vs_dreq_pin,
-                   ini_block.vs_shutdown_pin,
-                   ini_block.vs_shutdownx_pin ) ;
+                   ini_block.shutdown_pin,
+                   ini_block.shutdownx_pin ) ;
   #endif
-  p = dbgprint ( "Connect to WiFi" ) ;                   // Show progress
-  tftlog ( p ) ;                                         // On TFT too
+  p = "Connect to WiFi" ;                                // Show progress
+  dbgprint ( p ) ;
+  tftlog ( p, true ) ;                                         // On TFT too
   NetworkFound = connectwifi() ;                         // Connect to WiFi network
   dbgprint ( "Start server for commands" ) ;
   cmdserver.on ( "/getprefs",  handle_getprefs ) ;       // Handle get preferences
   cmdserver.on ( "/saveprefs", handle_saveprefs ) ;      // Handle save preferences
   cmdserver.on ( "/getdefs",   handle_getdefs ) ;        // Handle get default config
-  cmdserver.on ( "/settings",  handle_settings ) ;       // Handle steings like presets/volume,...
-  cmdserver.onNotFound ( handleFileRead ) ;              // For handling a simple page/file
+  cmdserver.on ( "/settings",  handle_settings ) ;       // Handle strings like presets/volume,...
+  cmdserver.on ( "/mp3list",   handle_mp3list ) ;        // Handle request for list of tracks
+  cmdserver.onNotFound ( handle_notfound ) ;             // For handling a simple page/file and parameters
   cmdserver.begin() ;                                    // Start http server
   if ( NetworkFound )                                    // OTA and MQTT only if Wifi network found
   {
     dbgprint ( "Network found. Starting mp3 client,"
                " mqtt and OTA" ) ;
-    mp3client = new AsyncClient ;                        // Create client for PVM-probe connection
-    mp3client->onData ( &handleData ) ;                  // Set callback on received probe data
-    mp3client->onConnect ( &onConnect ) ;                // Set callback on probe connect
-    mp3client->onDisconnect ( &onDisConnect ) ;          // Set callback on probe disconnect
-    mp3client->onError ( &onError ) ;                    // Set callback on probe error
-    mp3client->onTimeout ( &onTimeout ) ;                // Set callback on probe time-out
+    mp3client = new AsyncClient ;                        // Create client for Shoutcast connection
+    mp3client->onData ( &handleData ) ;                  // Set callback on received mp3 data
+    mp3client->onConnect ( &onConnect ) ;                // Set callback on connect
+    mp3client->onDisconnect ( &onDisConnect ) ;          // Set callback on disconnect
+    mp3client->onError ( &onError ) ;                    // Set callback on error
+    mp3client->onTimeout ( &onTimeout ) ;                // Set callback on time-out
     mqtt_on = ( ini_block.mqttbroker.length() > 0 ) &&   // Use MQTT if broker specified
               ( ini_block.mqttbroker != "none" ) ;
-    ArduinoOTA.setHostname ( NAME ) ;                    // Set the hostname
-    ArduinoOTA.onStart ( otastart ) ;
-    ArduinoOTA.begin() ;                                 // Allow update over the air
+    otaInit() ;                                          // Int OTA handling (if enabled)
     if ( mqtt_on )                                       // Broker specified?
     {
       if ( ( ini_block.mqttprefix.length() == 0 ) ||     // No prefix?
@@ -2451,10 +2609,6 @@ void setup()
       dbgprint ( "Error setting up MDNS responder!" ) ;
     }
   }
-  else
-  {
-    currentpreset = ini_block.newpreset ;                // No network: do not start radio
-  }
   timer = timerBegin ( 0, 80, true ) ;                   // User 1st timer with prescaler 80
   timerAttachInterrupt ( timer, &timer100, true ) ;      // Call timer100() on timer alarm
   timerAlarmWrite ( timer, 100000, true ) ;              // Alarm every 100 msec
@@ -2465,53 +2619,72 @@ void setup()
                ini_block.clk_server.c_str() ) ;          // GMT offset, daylight offset in seconds
   timeinfo.tm_year = 0 ;                                 // Set TOD to illegal
   // Init settings for rotary switch (if existing).
-  if ( ( ini_block.enc_clk_pin + ini_block.enc_dt_pin + ini_block.enc_sw_pin ) > 2 )
-  {
-    attachInterrupt ( ini_block.enc_clk_pin, isr_enc_turn,   CHANGE ) ;
-    attachInterrupt ( ini_block.enc_dt_pin,  isr_enc_turn,   CHANGE ) ;
-    attachInterrupt ( ini_block.enc_sw_pin,  isr_enc_switch, CHANGE ) ;
-    dbgprint ( "Rotary encoder is enabled" ) ;
-  }
-  else
-  {
-    dbgprint ( "Rotary encoder is disabled (%d/%d/%d)",
-               ini_block.enc_clk_pin,
-               ini_block.enc_dt_pin,
-               ini_block.enc_sw_pin) ;
-  }
+  #ifdef ZIPPYB5
+    if ( ( ini_block.enc_up_pin + ini_block.enc_dwn_pin + ini_block.enc_sw_pin ) > 2 )
+    {
+      attachInterrupt ( ini_block.enc_up_pin,  isr_enc_turn,   CHANGE ) ;
+      attachInterrupt ( ini_block.enc_dwn_pin, isr_enc_turn,   CHANGE ) ;
+      attachInterrupt ( ini_block.enc_sw_pin,  isr_enc_switch, CHANGE ) ;
+      dbgprint ( "ZIPPY side switch is enabled" ) ;
+    }
+    else
+    {
+      dbgprint ( "ZIPPY side switch is disabled (%d/%d/%d)",
+                ini_block.enc_up_pin,
+                ini_block.enc_dwn_pin,
+                ini_block.enc_sw_pin ) ;
+    }
+  #else
+    if ( ( ini_block.enc_clk_pin + ini_block.enc_dt_pin + ini_block.enc_sw_pin ) > 2 )
+    {
+      attachInterrupt ( ini_block.enc_clk_pin, isr_enc_turn,   CHANGE ) ;
+      attachInterrupt ( ini_block.enc_dt_pin,  isr_enc_turn,   CHANGE ) ;
+      attachInterrupt ( ini_block.enc_sw_pin,  isr_enc_switch, CHANGE ) ;
+      dbgprint ( "Rotary encoder is enabled" ) ;
+    }
+    else
+    {
+      dbgprint ( "Rotary encoder is disabled (%d/%d/%d)",
+                ini_block.enc_clk_pin,
+                ini_block.enc_dt_pin,
+                ini_block.enc_sw_pin ) ;
+    }
+  #endif
   if ( NetworkFound )
   {
     gettime() ;                                           // Sync time
   }
-  if ( dsp_ok )
-  {
-    dsp_fillRect ( 0, 8,                                  // Clear most of the screen
-                   dsp_getwidth(),
-                   dsp_getheight() - 8, BLACK ) ;
-  }
   outchunk.datatyp = QDATA ;                              // This chunk dedicated to QDATA
   adc1_config_width ( ADC_WIDTH_12Bit ) ;
   adc1_config_channel_atten ( ADC1_CHANNEL_0, ADC_ATTEN_0db ) ;
+  radioqueue = xQueueCreate ( 10,                         // Create small queue for communication to radiofuncs
+                             sizeof ( qdata_type ) ) ;
   dataqueue = xQueueCreate ( QSIZ,                        // Create queue for communication
                              sizeof ( qdata_struct ) ) ;
+#ifdef SDCARD
+  sdqueue = xQueueCreate ( 10,                            // Create small queue for communication to sdfuncs
+                            sizeof ( qdata_type ) ) ;
+  tftlog ( "Mount&scan SD card", true ) ;
+  sdfuncs() ;                                             // Mount and scan SD card
+#endif
   xTaskCreatePinnedToCore (
     playtask,                                             // Task to play data in dataqueue.
-    "Playtask",                                           // name of task.
+    "Playtask",                                           // Name of task.
     2500,                                                 // Stack size of task
     NULL,                                                 // parameter of the task
     2,                                                    // priority of the task
     &xplaytask,                                           // Task handle to keep track of created task
     0 ) ;                                                 // Run on CPU 0
-  xTaskCreate (
-    spftask,                                              // Task to handle special functions.
-    "Spftask",                                            // name of task.
-    2048,                                                 // Stack size of task
-    NULL,                                                 // parameter of the task
-    1,                                                    // priority of the task
-    &xspftask ) ;                                         // Task handle to keep track of created task
-  vTaskPrioritySet ( NULL, 2 ) ;                          // Set main task priority
-  singleclick = false ;                                   // Migth be fantom click
+  singleclick = false ;                                   // Might be fantom click
+  if ( dsp_ok )                                           // Is display okay?
+  {
+    delay ( 2000 ) ;                                      // Yes, allow user to read display text
+    dsp_erase() ;                                         // Clear screen
+  }
+  tftset ( 0, NAME ) ;                                    // Set screen segment text top line
+  myQueueSend ( radioqueue, &startcmd ) ;                 // Start player in radio mode
 }
+
 
 //**************************************************************************************************
 //                                        W R I T E P R E F S                                      *
@@ -2556,6 +2729,68 @@ void writeprefs ( AsyncWebServerRequest *request )
 }
 
 
+#ifdef SDCARD
+//**************************************************************************************************
+//                                        C B  _ M P 3 L I S T                                     *
+//**************************************************************************************************
+// Callback function for handle_mp3list, will be called for every chunk to send to client.         *
+// If no more data is available, this function will return 0.                                      *
+//**************************************************************************************************
+size_t cb_mp3list ( uint8_t *buffer, size_t maxLen, size_t index )
+{
+  static int   i ;                                    // Index in track list
+  size_t       len = 0 ;                              // Number of bytes filled in buffer
+  uint16_t     slen ;                                 // Length of filespec
+  char*        p = (char*)buffer ;                    // Treat as pointer to aray of char
+
+  if ( index == 0 )                                   // First call for this page?
+  {
+    i = 0 ;                                           // Yes, set index (track number)
+  }
+  while ( maxLen > ( sizeof(SD_lastmp3spec) + 2 ) )   // Space for another filespec?
+  {
+    if ( i >= SD_filecount )                          // Beyond end of list?
+    {
+      break ;                                         // Yes, stop
+    }
+    strcpy ( p, getSDFileName ( i++ ) ) ;             // Add next full file spec
+    strcat ( p, "\n" ) ;                              // Separator
+    slen =strlen ( p ) ;                              // Length of filespec including separator
+    p += slen ;                                       // Move pointer
+    len += slen ;                                     // Set new tatal length
+    maxLen -= slen ;                                  // Set new free space
+    delay ( 2 ) ;                                     // Allow other tasks
+  }
+  // We come here if output buffer is completely full or if end of tracklist is reached
+  return len ;                                        // Return filled length of buffer
+}
+
+
+//**************************************************************************************************
+//                                    H A N D L E _ M P L I S T                                    *
+//**************************************************************************************************
+// Called from mp3play page to list all the MP3 tracks.                                            *
+// It will handle the chunks for the client.  The buffer is filled by the callback routine.        *
+//**************************************************************************************************
+void handle_mp3list ( AsyncWebServerRequest *request )
+{
+  AsyncWebServerResponse *response ;
+
+  response = request->beginChunkedResponse ( "text/plain", cb_mp3list ) ;
+  response->addHeader ( "Server", NAME ) ;
+  request->send ( response ) ;
+}
+#else
+//**************************************************************************************************
+//                                    H A N D L E _ M P L I S T                                    *
+//**************************************************************************************************
+// Dummy version.                                                                                  *
+//**************************************************************************************************
+void handle_mp3list ( AsyncWebServerRequest *request )
+{
+  request->send ( 200, "text/plain", String ( "<empty>" ) ) ;
+}
+#endif
 
 //**************************************************************************************************
 //                                    H A N D L E _ G E T P R E F S                                *
@@ -2566,7 +2801,6 @@ void handle_getprefs ( AsyncWebServerRequest *request )
 {
   String prefs ;
   
-  dbgprint ( "HTTP get preferences" ) ;                // Show request
   //if ( datamode != STOPPED )                         // Still playing?
   //{
   //  setdatamode (  STOPREQD ) ;                      // Stop playing
@@ -2584,8 +2818,7 @@ void handle_getprefs ( AsyncWebServerRequest *request )
 void handle_saveprefs ( AsyncWebServerRequest *request )
 {
   String reply = "Config saved" ;                      // Default reply
-  
-  dbgprint ( "HTTP save preferences" ) ;               // Show request
+
   writeprefs ( request ) ;                             // Write to NVS
   request->send ( 200, "text/plain", reply ) ;         // Send the reply
 }
@@ -2639,7 +2872,7 @@ void handle_settings ( AsyncWebServerRequest *request )
         statstr.remove ( 0, inx + 1 ) ;                  // Yes, remove non-comment part
       }
       chomp ( statstr ) ;                                // Remove garbage from description
-      dbgprint ( "statstr is %s", statstr.c_str() ) ;
+      //dbgprint ( "statstr is %s", statstr.c_str() ) ;
       val += String ( "preset_" ) +
              String ( i ) +
              String ( "=" ) +
@@ -2672,7 +2905,7 @@ void handleSaveReq()
     return ;
   }
   savetime = millis() ;                                   // Set time of last save
-  nvssetstr ( "preset", String ( currentpreset )  ) ;     // Save current preset
+  nvssetstr ( "preset", String ( newpreset )  ) ;         // Save current preset
   nvssetstr ( "volume", String ( ini_block.reqvol ) );    // Save current volue
   nvssetstr ( "toneha", String ( ini_block.rtone[0] ) ) ; // Save current toneha
   nvssetstr ( "tonehf", String ( ini_block.rtone[1] ) ) ; // Save current tonehf
@@ -2735,7 +2968,7 @@ void chk_enc()
 
   if ( enc_menu_mode != VOLUME )                              // In default mode?
   {
-    if ( enc_inactivity > 40 )                                // No, more than 4 seconds inactive
+    if ( enc_inactivity > 50 )                                // No, more than 5 seconds inactive
     {
       enc_inactivity = 0 ;
       enc_menu_mode = VOLUME ;                                // Return to VOLUME mode
@@ -2755,8 +2988,22 @@ void chk_enc()
   }
   if ( tripleclick )                                          // First handle triple click
   {
-    dbgprint ( "Triple click") ;
-    tripleclick = false ;
+    dbgprint ( "Triple click" ) ;
+    tripleclick = false ;                                     // Reset flag
+    #ifdef SDCARD
+      if ( SD_filecount )                                     // Tracks on SD?
+      {
+        enc_menu_mode = TRACK ;                               // Swich to TRACK mode
+        dbgprint ( "Encoder mode set to TRACK" ) ;
+        tftset ( 3, "Turn to select track\n"                  // Show current option
+                    "Press to confirm" ) ;
+        getNextSDFileName() ;                                 // Start with next file on SD
+      }
+      else
+      {
+        dbgprint ( "No tracks on SD" ) ;
+      }
+    #endif
   }
   if ( doubleclick )                                          // Handle the doubleclick
   {
@@ -2766,11 +3013,11 @@ void chk_enc()
     dbgprint ( "Encoder mode set to PRESET" ) ;
     tftset ( 3, "Turn to select station\n"                    // Show current option
                 "Press to confirm" ) ;
-    enc_preset = ini_block.newpreset + 1 ;                    // Start with current preset + 1
+    enc_preset = newpreset + 1 ;                              // Start with current preset + 1
   }
   if ( singleclick )
   {
-    dbgprint ( "Single click") ;
+    dbgprint ( "Single click" ) ;
     singleclick = false ;
     switch ( enc_menu_mode )                                  // Which mode (VOLUME, PRESET)?
     {
@@ -2784,36 +3031,54 @@ void chk_enc()
           tftset ( 3, "Mute" ) ;
         }
         muteflag = !muteflag ;                                // Mute/unmute
+        dbgprint ( "Mute set to %d", muteflag ) ;
         break ;
       case PRESET :
-        currentpreset = -1 ;                                  // Make sure current is different
-        ini_block.newpreset = enc_preset ;                    // Make a definite choice
+        newpreset = enc_preset ;                              // Make a definite choice
+        enc_menu_mode = VOLUME ;                              // Back to default mode
+        myQueueSend ( radioqueue, &startcmd ) ;               // Signal radiofuncs()
+        tftset ( 3, "" ) ;                                    // Clear text
+        break ;
+    #ifdef SDCARD
+      case TRACK :
+        myQueueSend ( sdqueue, &startcmd ) ;                  // Signal SDfuncs()
         enc_menu_mode = VOLUME ;                              // Back to default mode
         tftset ( 3, "" ) ;                                    // Clear text
+        break ;
+    #endif
+      default :
         break ;
     }
   }
   if ( longclick )                                            // Check for long click
   {
     dbgprint ( "Long click") ;
-    if ( datamode != STOPPED )
-    {
-      setdatamode ( STOPREQD ) ;                              // Request STOP, do not touch logclick flag
-    }
-    else
-    {
-      longclick = false ;                                     // Reset condition
-      dbgprint ( "Long click detected" ) ;
-    }
+    myQueueSend ( sdqueue, &stopcmd ) ;                       // Stop player
+    myQueueSend ( radioqueue, &stopcmd ) ;                    // Stop player
+    //if ( datamode != STOPPED )
+    //{
+    //  setdatamode ( STOPREQD ) ;                            // Request STOP, do not touch longclick flag
+    //}
+    //else
+    //{
+    longclick = false ;                                       // Reset condition
+    #ifdef SDCARD
+      if ( SD_filecount )
+      {
+        getSDFileName ( -1 ) ;                                // Random choice
+        myQueueSend ( sdqueue, &startcmd ) ;                  // Start random track
+      }
+    #endif
   }
   if ( rotationcount == 0 )                                   // Any rotation?
   {
     return ;                                                  // No, return
   }
-  //dbgprint ( "Rotation count %d", rotationcount ) ;
-  switch ( enc_menu_mode )                                    // Which mode (VOLUME, PRESET)?
+  dbgprint ( "Rotation count %d", rotationcount ) ;
+  switch ( enc_menu_mode )                                    // Which mode (VOLUME, PRESET, TRACK)?
   {
     case VOLUME :
+      rotationcount *= 4 ;                                    // Step by 4 percent
       if ( ( ini_block.reqvol + rotationcount ) < 0 )         // Limit volume
       {
         ini_block.reqvol = 0 ;                                // Limit to normal values
@@ -2853,10 +3118,147 @@ void chk_enc()
       chomp ( tmp ) ;                                         // Remove garbage from description
       tftset ( 3, tmp ) ;                                     // Set screen segment bottom part
       break ;
+#ifdef SDCARD
+    case TRACK :
+      getSDFileName ( getCurrentSDTrackNumber() +            // Select next / previous file on SD
+                      rotationcount ) ;
+      dbgprint ( "Select track %d: %s",                      // Show for debug
+                  getCurrentSDTrackNumber(),
+                  getCurrentSDFileName() ) ;
+      tftset ( 3, getCurrentShortSDFileName() ) ;            // Set screen segment bottom part
+      break ;
+#endif
     default :
       break ;
   }
   rotationcount = 0 ;                                         // Reset
+}
+
+//**************************************************************************************************
+//                                     S P F U N C S                                               *
+//**************************************************************************************************
+// Handles display of text, time and volume on TFT.                                                *
+// Handles ADC meassurements.                                                                      *
+//**************************************************************************************************
+void spfuncs()
+{
+  if ( spftrigger )                                             // Will be set every 100 msec
+  {
+    spftrigger = false ;                                        // Reset trigger
+    if ( dsp_usesSPI() )                                        // Does display uses SPI?
+    {
+      claimSPI ( "hspectft" ) ;                                 // Yes, claim SPI bus
+    }
+    if ( dsp_ok )                                               // Posible to update TFT?
+    {
+      for ( uint16_t i = 0 ; i < TFTSECS ; i++ )                // Yes, handle all sections
+      {
+        if ( tftdata[i].update_req )                            // Refresh requested?
+        {
+          displayinfo ( i ) ;                                   // Yes, do the refresh
+          dsp_update ( enc_menu_mode == VOLUME ) ;              // Updates to the screen
+          tftdata[i].update_req = false ;                       // Reset request
+          break ;                                               // Just handle 1 request
+        }
+      }
+      dsp_update ( enc_menu_mode == VOLUME ) ;                  // Be sure to paint physical screen
+    }
+    if ( dsp_usesSPI() )                                        // Does display uses SPI?
+    {
+      releaseSPI() ;                                            // Yes, release SPI bus
+    }
+    if ( time_req && NetworkFound )                             // Time to refresh time?
+    {
+      gettime() ;                                               // Yes, get the current time
+    }
+    claimSPI ( "hspec" ) ;                                      // Claim SPI bus
+    if ( muteflag )                                             // Mute or not?
+    {
+      player_setVolume ( 0 ) ;                                  // Mute
+    }
+    else
+    {
+      player_setVolume ( ini_block.reqvol ) ;                   // Unmute
+    }
+    if ( reqtone )                                              // Request to change tone?
+    {
+      reqtone = false ;
+      player_setTone ( ini_block.rtone ) ;                      // Set SCI_BASS to requested value
+    }
+    if ( time_req )                                             // Time to refresh timetxt?
+    {
+      time_req = false ;                                        // Yes, clear request
+      if ( NetworkFound  )                                      // Time available?
+      {
+        displaytime ( timetxt ) ;                               // Write to TFT screen
+      }
+      displayvolume ( player_getVolume() ) ;                    // Show volume on display
+      displaybattery ( ini_block.bat0, ini_block.bat100,        // Show battery charge on display
+                      adcval ) ;
+    }
+    releaseSPI() ;                                              // Release SPI bus
+    if ( mqtt_on )
+    {
+      if ( !mqttclient.connected() )                            // See if connected
+      {
+        mqttreconnect() ;                                       // No, reconnect
+      }
+      else
+      {
+        mqttpub.publishtopic() ;                                // Check if any publishing to do
+      }
+    }
+    adcval = ( 15 * adcval +                                    // Read ADC and do some filtering
+               adc1_get_raw ( ADC1_CHANNEL_0 ) ) / 16 ;
+  }
+}
+
+
+//**************************************************************************************************
+//                                     R A D I O F U N C S                                         *
+//**************************************************************************************************
+// Handles commands for the connection to a icecast server.                                        *
+// Commands are received in the input queue.                                                       *
+// Data from the server is handle by the handleData() function.                                    *
+//**************************************************************************************************
+void radiofuncs()
+{
+  qdata_type   radiocmd ;                                         // Command from radioqueue
+  static bool  connected = false ;                                // Connected to host or not
+
+  if ( xQueueReceive ( radioqueue, &radiocmd, 0 ) )               // New command in queue?
+  {
+    dbgprint ( "Radiofuncs cmd is %d", radiocmd ) ;
+    switch ( radiocmd )                                           // Yes, examine command
+    {
+      case QSTARTSONG:                                            // Start a new station?
+        if ( sdqueue )                                            // SD card configured?
+        {
+          myQueueSend ( sdqueue, &stopcmd ) ;                     // Yes, send STOP to SD queue (First Out)
+          sdfuncs() ;                                             // Allow sdfuncs to react
+        }
+        if ( newpreset >= 0 )                                     // Is negative for "station=xxxxx"
+        {
+          host = readhostfrompref ( newpreset ) ;                 // Get station belonging to preset
+        }
+        else
+        {
+          newpreset = 0 ;                                         // Do not leave preset negative
+        }
+        connecttohost() ;                                         // Connect to stream host
+        connected = true ;                                        // Remember connection state
+        mqttpub.trigger ( MQTT_PRESET ) ;                         // Request publishing to MQTT
+        break ;
+      case QSTOPSONG:                                             // Stop playing?
+        if ( connected )                                          // Yes, are we stiil playing?
+        {
+          stop_mp3client() ;                                      // Yes, stop input stream
+          connected = false ;                                     // Remember connection state
+        }
+      default:
+        break ;
+    }
+  }
 }
 
 
@@ -2864,31 +3266,24 @@ void chk_enc()
 //                                           M P 3 L O O P                                         *
 //**************************************************************************************************
 // Called from the main loop() for the mp3 functions.                                              *
-// A connection to an MP3 server is active and we are ready to receive data.                       *
-// Normally there is about 2 to 4 kB available in the data stream.  This depends on the sender.    *
+// Act on new staion requests.                                                                     *
 //**************************************************************************************************
 void mp3loop()
 {
-  if ( hostreq )                                          // New preset or station?
+#ifdef bla
+  if ( newpreset != currentpreset )                       // New station or next from playlist requested?
   {
-    hostreq = false ;
-    currentpreset = ini_block.newpreset ;                 // Remember current preset
-    mqttpub.trigger ( MQTT_PRESET ) ;                     // Request publishing to MQTT
-    connecttohost() ;                                     // Switch to new host
-  }
-  if ( ini_block.newpreset != currentpreset )            // New station or next from playlist requested?
-  {
-    if ( datamode != STOPPED )                           // Yes, still busy?
+    if ( datamode != STOPPED )                            // Yes, still busy?
     {
-      setdatamode ( STOPREQD ) ;                         // Yes, request STOP
+      setdatamode ( STOPREQD ) ;                          // Yes, request STOP
     }
     else
     {
       if ( playlist_num )                                 // Playing from playlist?
       { // Yes, retrieve URL of playlist
-        playlist_num += ini_block.newpreset -
+        playlist_num += newpreset -
                         currentpreset ;                   // Next entry in playlist
-        ini_block.newpreset = currentpreset ;             // Stay at current preset
+        newpreset = currentpreset ;                       // Stay at current preset
       }
       else
       {
@@ -2905,218 +3300,33 @@ void mp3loop()
         chomp ( host ) ;                                  // Get rid of part after "#"
       }
       dbgprint ( "New preset/file requested (%d/%d) from %s",
-                 ini_block.newpreset, playlist_num, host.c_str() ) ;
+                 newpreset, playlist_num, host.c_str() ) ;
       if ( host != ""  )                                  // Preset in ini-file?
       {
-        hostreq = true ;                                  // Force this station as new preset
+        myQueueSend ( radioqueue, &startcmd ) ;           // Signal radiofuncs()
       }
       else
       {
         // This preset is not available, return to preset 0, will be handled in next mp3loop()
         dbgprint ( "No host for this preset" ) ;
-        ini_block.newpreset = 0 ;                         // Wrap to first station
+        newpreset = 0 ;                                   // Wrap to first station
       }
+      currentpreset = newpreset ;
     }
   }
-  if ( datamode == STOPREQD )                            // STOP requested?
+  if ( datamode == STOPREQD )                             // STOP requested?
   {
     dbgprint ( "STOP requested" ) ;
-    stop_mp3client() ;                                   // Disconnect if still connected
-    chunked = false ;                                    // Not longer chunked
-    datacount = 0 ;                                      // Reset datacount
-    outqp = outchunk.buf ;                               // and pointer
-    queuefunc ( QSTOPSONG ) ;                            // Queue a request to stop the song
-    metaint = 0 ;                                        // No metaint known now
-    setdatamode ( STOPPED ) ;                            // Yes, state becomes STOPPED
-    return ;
+    stop_mp3client() ;                                    // Disconnect if still connected
+    chunked = false ;                                     // Not longer chunked
+    datacount = 0 ;                                       // Reset datacount
+    outqp = outchunk.buf ;                                // and pointer
+    myQueueSend ( radioqueue, &stopcmd ) ;                // Queue a request to stop the song
+    metaint = 0 ;                                         // No metaint known now
+    setdatamode ( STOPPED ) ;                             // Yes, state becomes STOPPED
   }
-}
-
-#ifdef bla
-void mp3loop()
-{
-  uint32_t        maxchunk ;                             // Max number of bytes to read
-  int             res = 0 ;                              // Result reading from mp3 stream
-  uint32_t        av = 0 ;                               // Available in stream
-  String          nodeID ;                               // Next nodeID of track on SD
-  uint32_t        timing ;                               // Startime and duration this function
-  uint32_t        qspace ;                               // Free space in data queue
-  String          tmp ;                                  // Needed for station name in pref
-  int             inx ;                                  // Indexe of "#" in station name
-
-  // Try to keep the Queue to playtask filled up by adding as much bytes as possible
-  if ( datamode & ( INIT | HEADER | DATA |               // Test op playing
-                    METADATA | PLAYLISTINIT |
-                    PLAYLISTHEADER |
-                    PLAYLISTDATA ) )
-  {
-    timing = millis() ;                                  // Start time this function
-    maxchunk = sizeof(tmpbuff) ;                         // Reduce byte count for this mp3loop()
-    qspace = uxQueueSpacesAvailable( dataqueue ) *       // Compute free space in data queue
-             sizeof(qdata_struct) ;
-    if ( localfile )                                     // Playing file from SD card or USB drive?
-    {
-      av = mp3filelength ;                               // Bytes left in file
-      if ( av < maxchunk )                               // Reduce byte count for this mp3loop()
-      {
-        maxchunk = av ;
-      }
-      if ( maxchunk > qspace )                           // Enough space in queue?
-      {
-        maxchunk = qspace ;                              // No, limit to free queue space
-      }
-      if ( maxchunk )                                    // Anything to read?
-      {
-        claimSPI ( "fsread" ) ;                          // Claim SPI bus
-        res = read_FS ( tmpbuff, maxchunk ) ;            // Read a block of data
-        releaseSPI() ;                                   // Release SPI bus
-        mp3filelength -= res ;                           // Number of bytes left
-      }
-    }
-    else
-    {
-      av = mp3client.available() ;                       // Available from stream
-      if ( av < maxchunk )                               // Limit read size
-      {
-        maxchunk = av ;
-      }
-      if ( maxchunk > qspace )                           // Enough space in queue?
-      {
-        maxchunk = qspace ;                              // No, limit to free queue space
-      }
-      if ( ( maxchunk > 1000 ) ||
-           ( datamode == INIT ) ||                       // Only read if worthwile or during INIT
-           ( datamode == PLAYLISTINIT ) )
-      {
-        if ( maxchunk )                                  // Zero bytes not allowed
-        {
-          res = mp3client.read ( tmpbuff, maxchunk ) ;   // Read a number of bytes from the stream
-        }
-      }
-    }
-    if ( maxchunk == 0 )
-    {
-      if ( datamode == PLAYLISTDATA )                    // End of playlist
-      {
-        playlist_num = 1 ;                               // Yes, restart playlist
-        dbgprint ( "End of playlist seen" ) ;
-        setdatamode ( STOPPED ) ;
-        ini_block.newpreset++ ;                          // Go to next preset
-      }
-    }
-    for ( int i = 0 ; i < res ; i++ )
-    {
-      handlebyte_ch ( tmpbuff[i] ) ;                     // Handle one byte
-    }
-    timing = millis() - timing ;                         // Duration this function
-  }
-  if ( datamode == STOPREQD )                            // STOP requested?
-  {
-    dbgprint ( "STOP requested" ) ;
-    if ( localfile )
-    {
-      claimSPI ( "close" ) ;                             // Claim SPI bus
-      close_SDCARD() ;
-      releaseSPI() ;                                     // Release SPI bus
-    }
-    else
-    {
-      stop_mp3client() ;                                 // Disconnect if still connected
-    }
-    chunked = false ;                                    // Not longer chunked
-    datacount = 0 ;                                      // Reset datacount
-    outqp = outchunk.buf ;                               // and pointer
-    queuefunc ( QSTOPSONG ) ;                            // Queue a request to stop the song
-    metaint = 0 ;                                        // No metaint known now
-    setdatamode ( STOPPED ) ;                            // Yes, state becomes STOPPED
-    return ;
-  }
-  if ( localfile )                                       // Playing from SD?
-  {
-    if ( datamode & DATA )                               // Test op playing
-    {
-      if ( av == 0 )                                     // End of mp3 data?
-      {
-        setdatamode ( STOPREQD ) ;                       // End of local mp3-file detected
-        if ( playlist_num )                              // Playing from playlist?
-        {
-          playlist_num++ ;                               // Yes, goto next item in playlist
-          setdatamode ( PLAYLISTINIT ) ;
-          host = playlist ;
-        }
-        else
-        {
-          nodeID = selectnextFSnode ( +1 ) ;             // Select the next file on SD/USB
-          host = getFSfilename ( nodeID ) ;
-        }
-        hostreq = true ;                                 // Request this host
-      }
-    }
-  }
-  if ( ini_block.newpreset != currentpreset )            // New station or next from playlist requested?
-  {
-    if ( datamode != STOPPED )                           // Yes, still busy?
-    {
-      setdatamode ( STOPREQD ) ;                         // Yes, request STOP
-    }
-    else
-    {
-      if ( playlist_num )                                 // Playing from playlist?
-      { // Yes, retrieve URL of playlist
-        playlist_num += ini_block.newpreset -
-                        currentpreset ;                   // Next entry in playlist
-        ini_block.newpreset = currentpreset ;             // Stay at current preset
-      }
-      else
-      {
-        host = readhostfrompref() ;                       // Lookup preset in preferences
-        icyname = host ;                                  // First guess station name
-        inx = icyname.indexOf ( "#" ) ;                   // Get position of "#"
-        if ( inx > 0 )                                    // Hash sign present?
-        {
-          icyname.remove ( 0, inx + 1 ) ;                 // Yes, remove non-comment part
-        }
-        chomp ( icyname ) ;                               // Remove garbage from description
-        tftset ( 2, icyname ) ;                           // Set screen segment bottom part
-        mqttpub.trigger ( MQTT_ICYNAME ) ;                // Request publishing to MQTT
-        chomp ( host ) ;                                  // Get rid of part after "#"
-      }
-      dbgprint ( "New preset/file requested (%d/%d) from %s",
-                 ini_block.newpreset, playlist_num, host.c_str() ) ;
-      if ( host != ""  )                                  // Preset in ini-file?
-      {
-        hostreq = true ;                                  // Force this station as new preset
-      }
-      else
-      {
-        // This preset is not available, return to preset 0, will be handled in next mp3loop()
-        dbgprint ( "No host for this preset" ) ;
-        ini_block.newpreset = 0 ;                         // Wrap to first station
-      }
-    }
-  }
-  if ( hostreq )                                          // New preset or station?
-  {
-    dbgprint ( "New station request" ) ;
-    hostreq = false ;
-    currentpreset = ini_block.newpreset ;                 // Remember current preset
-    mqttpub.trigger ( MQTT_PRESET ) ;                     // Request publishing to MQTT
-    // Find out if this URL is on localhost (SD).
-    localfile = ( host.indexOf ( "localhost/" ) >= 0 ) ;
-    if ( localfile )                                      // Play file from localhost?
-    {
-      if ( ! connecttofile() )                            // Yes, open mp3-file
-      {
-        setdatamode ( STOPPED ) ;                         // Start in DATA mode
-      }
-    }
-    else
-    {
-      connecttohost() ;                                   // Switch to new host
-    }
-  }
-}
 #endif
+}
 
 
 //**************************************************************************************************
@@ -3140,8 +3350,7 @@ void loop()
   scanserial2() ;                                   // Handle serial input from NEXTION (if active)
   scandigital() ;                                   // Scan digital inputs
   scanIR() ;                                        // See if IR input
-  ArduinoOTA.handle() ;                             // Check for OTA
-  mp3loop() ;                                       // Do more mp3 related actions
+  otaHandle() ;                                     // Check for OTA
   if ( mqtt_on )                                    // Need to handle MQTT?
   {
     mqttclient.loop() ;                             // Handling of MQTT connection
@@ -3150,6 +3359,18 @@ void loop()
   handleIpPub() ;                                   // See if time to publish IP
   handleVolPub() ;                                  // See if time to publish volume
   chk_enc() ;                                       // Check rotary encoder functions
+  radiofuncs() ;                                    // Handle start/stop commands for icecast
+  spfuncs() ;                                       // Handle special functions
+  sdfuncs() ;                                       // Do SD card related functions
+  if ( testreq )
+  {
+    testreq = false ;
+    // heap_caps_print_heap_info ( MALLOC_CAP_8BIT ) ;
+    dbgprint ( "Stack maintask  is %d", uxTaskGetStackHighWaterMark ( maintask   ) ) ;
+    dbgprint ( "Stack playtask  is %d", uxTaskGetStackHighWaterMark ( xplaytask  ) ) ;
+    dbgprint ( "ADC reading is %d", adcval ) ;
+    dbgprint ( "%d IR interrupts seen", ir_intcount ) ;
+  }
 }
 
 
@@ -3246,6 +3467,7 @@ void handlebyte_ch ( uint8_t b )
   static uint16_t  playlistcnt ;                        // Counter to find right entry in playlist
   static int       LFcount ;                            // Detection of end of header
   static bool      ctseen = false ;                     // First line of header seen or not
+  static bool      redirection = false ;                // Redirection or not
 
   if ( chunked &&
        ( datamode & ( DATA |                           // Test op DATA handling
@@ -3299,6 +3521,8 @@ void handlebyte_ch ( uint8_t b )
   if ( datamode == INIT )                              // Initialize for header receive
   {
     ctseen = false ;                                   // Contents type not seen yet
+    redirection = false ;                              // No redirection found yet
+    outqp = outchunk.buf ;                             // Item empty now
     metaint = 0 ;                                      // No metaint found
     LFcount = 0 ;                                      // For detection end of header
     bitrate = 0 ;                                      // Bitrate still unknown
@@ -3327,22 +3551,24 @@ void handlebyte_ch ( uint8_t b )
         String metaline = String ( metalinebf ) ;      // Convert to string
         String lcml = metaline ;                       // Use lower case for compare
         lcml.toLowerCase() ;
-        if ( lcml.startsWith ( "location: http://" ) ) // Redirection?
+        if ( lcml.startsWith ( "location: " ) )        // Redirection?
         {
-          host = metaline.substring ( 17 ) ;           // Yes, get new URL
-          hostreq = true ;                             // And request this one
-        }
-        if ( lcml.startsWith ("location: https://") )  // Redirection?
-        {
-          host = metaline.substring ( 18 ) ;           // Yes, get new URL
-          hostreq = true ;                             // And request this one
+          redirection = true ;
+          if ( lcml.indexOf ( "http://" ) > 8 )        // Redirection with http://?
+          {
+            host = metaline.substring ( 17 ) ;         // Yes, get new URL
+          }
+          else if ( lcml.indexOf ( "https://" ) )      // Redirection with ttps://?
+          {
+            host = metaline.substring ( 18 ) ;         // Yes, get new URL
+          }
         }
         if ( lcml.indexOf ( "content-type" ) == 0)     // Line with "Content-Type: xxxx/yyy"
         {
           ctseen = true ;                              // Yes, remember seeing this
           audio_ct = metaline.substring ( 13 ) ;       // Set contentstype
           audio_ct.trim() ;
-          dbgprint ( "%s seen.", audio_ct.c_str() ) ;
+          dbgprint ( "%s seen.", audio_ct.c_str() ) ;  // Like "audio/mpeg"
         }
         if ( lcml.startsWith ( "icy-br:" ) )
         {
@@ -3375,14 +3601,23 @@ void handlebyte_ch ( uint8_t b )
         }
       }
       metalinebfx = 0 ;                                // Reset this line
-      if ( ( LFcount == 2 ) && ctseen )                // Content type seen and a double LF?
+      if ( LFcount == 2 )                              // Double LF marks end of header?
       {
-        dbgprint ( "Switch to DATA, bitrate is %d"     // Show bitrate
-                   ", metaint is %d",                  // and metaint
-                   bitrate, metaint ) ;
-        setdatamode ( DATA ) ;                         // Expecting data now
-        datacount = metaint ;                          // Number of bytes before first metadata
-        queuefunc ( QSTARTSONG ) ;                     // Queue a request to start song
+        if ( ctseen )                                  // Content type seen?
+        {
+          dbgprint ( "Switch to DATA, bitrate is %d"   // Show bitrate
+                    ", metaint is %d",                 // and metaint
+                    bitrate, metaint ) ;
+          setdatamode ( DATA ) ;                       // Expecting data now
+          datacount = metaint ;                        // Number of bytes before first metadata
+          queueToPt ( QSTARTSONG ) ;                   // Queue a request to start song
+        }
+        if ( redirection )                             // Redirection?
+        {
+          setdatamode ( INIT ) ;                       // Yes, mode to INIT again
+          newpreset = -1 ;                             // Mark host already set
+          myQueueSend ( radioqueue, &startcmd ) ;      // Restart with new found host
+        }
       }
     }
     else
@@ -3402,11 +3637,6 @@ void handlebyte_ch ( uint8_t b )
     {
       metalinebfx = 0 ;                                // Prepare to store first character
       metacount = b * 16 + 1 ;                         // New count for metadata including length byte
-      if ( metacount > 1 )
-      {
-        dbgprint ( "Metadata block %d bytes",
-                   metacount - 1 ) ;                   // Most of the time there are zero bytes of metadata
-      }
     }
     else
     {
@@ -3561,12 +3791,12 @@ void handlebyte_ch ( uint8_t b )
 
 
 //**************************************************************************************************
-//                                  H A N D L E F I L E R E A D                                    *
+//                                  H A N D L E _ N O T F O U N D                                  *
 //**************************************************************************************************
-// Transfer file van SPIFFS naar webserver client.                                                 *
-// If parameters are present: handle them                                                          *
+// If parameters are present: handle them.                                                         *
+// Otherwise: transfer file from SPIFFS to webserver client.                                       *
 //**************************************************************************************************
-void handleFileRead ( AsyncWebServerRequest *request )
+void handle_notfound ( AsyncWebServerRequest *request )
 {
   String       ct = String ( "text/plain" ) ;         // Default content type
   String       path ;                                 // Filename for SPIFFS
@@ -3590,7 +3820,7 @@ void handleFileRead ( AsyncWebServerRequest *request )
     {
       continue ;
     }
-    cmd = key + String ( "=" ) + contents ;           // Format commend to analyze
+    cmd = key + String ( "=" ) + contents ;           // Format command to analyze
     p = analyzeCmd ( cmd.c_str() ) ;                  // Analyze command
     sndstr += String ( p ) ;                          // Content of HTTP response follows the header
   }
@@ -3599,13 +3829,18 @@ void handleFileRead ( AsyncWebServerRequest *request )
     request->send ( 200, ct, sndstr ) ;               // Send reply
     return ;                                          // Quick return
   }
+  // No parameters, it is just a request for a new page, style sheet or icon
   path = request->url() ;                             // Path for requested filename
-  dbgprint ( "Handle file read, path is %s",
-             path.c_str() ) ;
   if ( path == String ( "/" ) )                       // Default is index.html
   {
     path = String ( "/index.html" ) ;                 // Select index.html
   }
+  #ifndef SDCARD
+    if ( path == "/mp3play.html" )                    // MP3 player page requested?
+    {
+      path = "/nomp3play.html" ;                      // Yes, select dummy mp3 player page
+    }
+  #endif
   if ( SPIFFS.exists ( path ) )                       // Does it exist in SPIFFS?
   {
     ct = getContentType ( path ) ;                    // Get content type
@@ -3675,6 +3910,7 @@ const char* analyzeCmd ( const char* str )
 // "wifi_00" and "preset_00" may appear more than once, like wifi_01, wifi_02, etc.                *
 // Examples with available parameters:                                                             *
 //   preset     = 12                        // Select start preset to connect to                   *
+//   track      = 34                        // Select MP3 track from SD card                       *
 //   preset_00  = <mp3 stream>              // Specify station for a preset 00-max *)              *
 //   volume     = 95                        // Percentage between 0 and 100                        *
 //   upvolume   = 2                         // Add percentage to current volume                    *
@@ -3700,6 +3936,7 @@ const char* analyzeCmd ( const char* str )
 //   clk_dst    = <1..2>                    // Offset during daylight saving time in hours *)      *
 //   settings                               // Returns setting like presets and tone               *
 //   status                                 // Show current URL to play                            *
+//   mp3list                                // Returns list with all MP3 files                     *
 //   test                                   // For test purposes                                   *
 //   debug      = 0 or 1                    // Switch debugging on or off                          *
 //   reset                                  // Restart the ESP32                                   *
@@ -3715,7 +3952,7 @@ const char* analyzeCmd ( const char* par, const char* val )
   int                ivalue ;                         // Value of argument as an integer
   static char        reply[180] ;                     // Reply to client, will be returned
   uint8_t            oldvol ;                         // Current volume
-  bool               relative ;                       // Relative argument (+ or -)
+  bool               relative = false ;               // Relative argument (+ or -)
 
   blset ( true ) ;                                    // Enable backlight of TFT
   strcpy ( reply, "Command accepted" ) ;              // Default reply
@@ -3729,28 +3966,25 @@ const char* analyzeCmd ( const char* par, const char* val )
   value = String ( val ) ;                            // Get the specified value
   chomp ( value ) ;                                   // Remove comment and extra spaces
   ivalue = value.toInt() ;                            // Also as an integer
-  ivalue = abs ( ivalue ) ;                           // Make positive
-  relative = argument.indexOf ( "up" ) == 0 ;         // + relative setting?
-  if ( argument.indexOf ( "down" ) == 0 )             // - relative setting?
+  if ( ( relative = argument.startsWith ( "up" ) ) )  // + relative setting?
   {
-    relative = true ;                                 // It's relative
-    ivalue = - ivalue ;                               // But with negative value
+    argument = argument.substring ( 2 ) ;             // Remove the "up"-part
+  }
+  else if ( ( relative = 
+                 argument.startsWith ( "down" )  ) )  // - relative setting?
+  {
+    ivalue = -ivalue ;                                // But with negative value
+    argument = argument.substring ( 4 ) ;             // Remove the "down"-part
   }
   if ( value.startsWith ( "http://" ) )               // Does (possible) URL contain "http://"?
   {
     value.remove ( 0, 7 ) ;                           // Yes, remove it
   }
-  if ( value.length() )
+  if ( argument == "ota" )                            // Enable/disable OTA?
   {
-    dbgprint ( "Command: %s with parameter %s",
-               argument.c_str(), value.c_str() ) ;
+    ota = ( ivalue != 0 ) ;                           // Yes, set switch acoordingly
   }
-  else
-  {
-    dbgprint ( "Command: %s (without parameter)",
-               argument.c_str() ) ;
-  }
-  if ( argument.indexOf ( "volume" ) >= 0 )           // Volume setting?
+  else if ( argument == "volume" )                    // Volume setting?
   {
     // Volume may be of the form "upvolume", "downvolume" or "volume" for relative or absolute setting
     oldvol = player_getVolume() ;                     // Get current volume
@@ -3778,52 +4012,45 @@ const char* analyzeCmd ( const char* par, const char* val )
   {
     muteflag = !muteflag ;                            // Request volume to zero/normal
   }
-  else if ( argument.indexOf ( "ir_" ) >= 0 )         // Ir setting?
+  else if ( argument.startsWith ( "ir_" ) )           // Ir setting?
   { // Do not handle here
   }
-  else if ( argument.indexOf ( "preset_" ) >= 0 )     // Enumerated preset?
+  else if ( argument.startsWith ( "preset_" ) )       // Enumerated preset?
   { // Do not handle here
   }
-  else if ( argument.indexOf ( "preset" ) >= 0 )      // (UP/DOWN)Preset station?
+  else if ( argument == "preset" )                    // (UP/DOWN)Preset station?
   {
     if ( relative )                                   // Relative argument?
     {
-      currentpreset = ini_block.newpreset ;           // Remember currentpreset
-      ini_block.newpreset += ivalue ;                 // Yes, adjust currentpreset
+      newpreset += ivalue ;                           // Yes, adjust preset
     }
     else
     {
-      ini_block.newpreset = ivalue ;                  // Otherwise set station
+      newpreset = ivalue ;                            // Otherwise set station
       playlist_num = 0 ;                              // Absolute, reset playlist
-      currentpreset = -1 ;                            // Make sure current is different
     }
-    setdatamode ( STOPREQD ) ;                        // Force stop MP3 player
+    host = readhostfrompref ( newpreset ) ;           // Set new host
+    myQueueSend ( radioqueue, &startcmd ) ;           // Signal radiofuncs()
     sprintf ( reply, "Preset is now %d",              // Reply new preset
-              ini_block.newpreset ) ;
+              newpreset ) ;
   }
-  else if ( argument == "stop" )                      // (un)Stop requested?
+#ifdef SDCARD
+  else if ( argument == "track" )                     // MP3 track request?
   {
-    if ( datamode & ( HEADER | DATA | METADATA | PLAYLISTINIT |
-                      PLAYLISTHEADER | PLAYLISTDATA ) )
-
+    if ( relative )                                   // Was it relative?
     {
-      setdatamode ( STOPREQD ) ;                      // Request STOP
+      ivalue = getCurrentSDTrackNumber() + ivalue ;   // Yes, relative to current tracknumber
     }
-    else
-    {
-      hostreq = true ;                                // Request UNSTOP
-    }
+    getSDFileName ( ivalue ) ;                        // Yes, select new track
+    myQueueSend ( sdqueue, &startcmd ) ;              // Signal SDfuncs()
   }
+#endif
   else if ( ( value.length() > 0 ) &&
             ( argument == "station" ) )               // Station in the form address:port
   {
-    ///if ( datamode & ( HEADER | DATA | METADATA | PLAYLISTINIT |
-    ///                  PLAYLISTHEADER | PLAYLISTDATA ) )
-    ///{
-    ///  setdatamode ( STOPREQD ) ;                      // Request STOP
-    ///}
     host = value ;                                    // Save it for storage and selection later
-    hostreq = true ;                                  // Force this station as new preset
+    newpreset = -1 ;                                  // Means: host alredy set
+    myQueueSend ( radioqueue, &startcmd ) ;           // Signal radiofuncs()
     sprintf ( reply,
               "Select %s",                            // Format reply
               host.c_str() ) ;
@@ -3841,7 +4068,7 @@ const char* analyzeCmd ( const char* par, const char* val )
                 icystreamtitle.c_str() ) ;            // Streamtitle from metadata
     }
   }
-  else if ( argument.startsWith ( "reset" ) )         // Reset request
+  else if ( argument == "reset" )                     // Reset request
   {
     resetreq = true ;                                 // Reset all
   }
@@ -3852,14 +4079,10 @@ const char* analyzeCmd ( const char* par, const char* val )
   else if ( argument == "test" )                      // Test command
   {
     sprintf ( reply, "Free memory is %d, chunks in queue %d, bitrate %d kbps",
-              ESP.getFreeHeap(),
+              heapspace,
               uxQueueMessagesWaiting ( dataqueue ),
               mbitrate ) ;
-    dbgprint ( "Stack maintask is %d", uxTaskGetStackHighWaterMark ( maintask ) ) ;
-    dbgprint ( "Stack playtask is %d", uxTaskGetStackHighWaterMark ( xplaytask ) ) ;
-    dbgprint ( "Stack spftask  is %d", uxTaskGetStackHighWaterMark ( xspftask ) ) ;
-    dbgprint ( "ADC reading is %d", adcval ) ;
-    dbgprint ( "%d IR interrupts seen", ir_intcount ) ;
+    testreq = true ;                                  // Request to print info in main program
   }
   // Commands for bass/treble control
   else if ( argument.startsWith ( "tone" ) )          // Tone command
@@ -3912,7 +4135,7 @@ const char* analyzeCmd ( const char* par, const char* val )
       ini_block.mqttpasswd = value.c_str() ;          // Yes, set broker password accordingly
     }
   }
-  else if ( argument == "debug" )                     // debug on/off request?
+  else if ( argument == "debug" )                     // Debug on/off request?
   {
     dbg_set ( ivalue != 0 ) ;                         // Yes, set flag accordingly
   }
@@ -3956,7 +4179,7 @@ const char* analyzeCmd ( const char* par, const char* val )
 
 
 //**************************************************************************************************
-//* Function that are called from spftask.                                                         *
+//* Function that are called from spfunc().                                                        *
 //* Note that some device dependent function are place in the *.h files.                           *
 //**************************************************************************************************
 
@@ -4048,26 +4271,6 @@ void gettime()
 }
 
 
-//**************************************************************************************************
-//                                H A N D L E _ T F T _ T X T                                      *
-//**************************************************************************************************
-// Check if tft refresh is requested.                                                              *
-//**************************************************************************************************
-bool handle_tft_txt()
-{
-  for ( uint16_t i = 0 ; i < TFTSECS ; i++ )              // Handle all sections
-  {
-    if ( tftdata[i].update_req )                          // Refresh requested?
-    {
-      displayinfo ( i ) ;                                 // Yes, do the refresh
-      dsp_update ( enc_menu_mode == VOLUME ) ;            // Updates to the screen
-      tftdata[i].update_req = false ;                     // Reset request
-      return true ;                                       // Just handle 1 request
-    }
-  }
-  return false ;                                          // Not a single request
-}
-
 #if defined(DEC_VS1053) || defined(DEC_VS1003)
 //**************************************************************************************************
 //                         P L A Y T A S K  ( V S 1 0 5 3 )                                        *
@@ -4126,6 +4329,7 @@ void playtask ( void * parameter )
 //**************************************************************************************************
 // Play stream data from input queue. Version for I2S output or output to internal DAC.            *
 // I2S output is suitable for a PCM5102A DAC.                                                      *
+// Input are blocks with 32 bytes MP3/AAC data delivered in the data queue.                        *
 // Internal ESP32 DAC (pin 25 and 26) is used when no pin BCK is configured.                       *
 // Note that the naming of the data pin is somewhat confusing.  The data out pin in the pin        *
 // configuration is called data_out_num, but this pin should be connected to the "DIN" pin of the  *
@@ -4147,8 +4351,8 @@ void playtask ( void * parameter )
      //.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
      .communication_format = I2S_COMM_FORMAT_I2S,
      .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,                  // High interrupt priority
-     .dma_buf_count        = 16,
-     .dma_buf_len          = 512,
+     .dma_buf_count        = 8,
+     .dma_buf_len          = 256,
      .use_apll             = 0,
      .tx_desc_auto_clear   = true,                                  // clear tx descriptor on underflow
      .fixed_mclk           = I2S_PIN_NO_CHANGE,                     // No pin for MCLK
@@ -4200,7 +4404,7 @@ void playtask ( void * parameter )
   }
   while ( true )
   {
-    if ( xQueueReceive ( dataqueue, &inchunk, 5 ) )
+    if ( xQueueReceive ( dataqueue, &inchunk, 500 ) )               // Get next chunk from queue
     {
       switch ( inchunk.datatyp )                                    // What kind of chunk?
       {
@@ -4212,7 +4416,8 @@ void playtask ( void * parameter )
           dbgprint ( "Playtask start song" ) ;
           playingstat = 1 ;                                         // Status for MQTT
           mqttpub.trigger ( MQTT_PLAYING ) ;                        // Request publishing to MQTT
-          helixInit() ;                                             // Init framebuffering
+          helixInit ( ini_block.shutdown_pin,                       // Enable amplifier output
+                      ini_block.shutdownx_pin ) ;                   // Init framebuffering
           break ;
         case QSTOPSONG:
           dbgprint ( "Playtask stop song" ) ;
@@ -4235,86 +4440,102 @@ void playtask ( void * parameter )
 }
 #endif
 
+
 //**************************************************************************************************
-//                                   H A N D L E _ S P E C                                         *
+//                                     S D F U N C S                                               *
 //**************************************************************************************************
-// Handle special (non-stream data) functions for spftask.                                         *
+// Handles data and directory scan of SD card.                                                     *
+// Commands are received in the input queue.                                                       *
 //**************************************************************************************************
-void handle_spec()
+void sdfuncs()
 {
-  // Do some special function if necessary
-  if ( dsp_usesSPI() )                                        // Does display uses SPI?
+#ifdef SDCARD
+  qdata_type          sdcmd ;                                       // Command from sdqueue
+  static bool         openfile = false ;                            // Open input file available
+  static bool         scanned = false ;                             // True if direcetory already scanned
+  static bool         sdokay = true ;                               // Assume SD is mounted
+  static bool         autoplay = true ;                             // Play next after end
+
+  if ( ! sdokay )                                                   // Quick return if card is nof okay
   {
-    claimSPI ( "hspectft" ) ;                                 // Yes, claim SPI bus
+    return ;
   }
-  if ( dsp_ok )                                               // Need to update TFT?
+  if ( ! scanned )                                                  // SD directory alread scanned?
   {
-    handle_tft_txt() ;                                        // Yes, TFT refresh necessary
-    dsp_update ( enc_menu_mode == VOLUME ) ;                  // Be sure to paint physical screen
-  }
-  if ( dsp_usesSPI() )                                        // Does display uses SPI?
-  {
-    releaseSPI() ;                                            // Yes, release SPI bus
-  }
-  if ( time_req && NetworkFound )                             // Time to refresh time?
-  {
-    gettime() ;                                               // Yes, get the current time
-  }
-  claimSPI ( "hspec" ) ;                                      // Claim SPI bus
-  if ( muteflag )                                             // Mute or not?
-  {
-    player_setVolume ( 0 ) ;                                  // Mute
-  }
-  else
-  {
-    player_setVolume ( ini_block.reqvol ) ;                   // Unmute
-  }
-  if ( reqtone )                                              // Request to change tone?
-  {
-    reqtone = false ;
-    player_setTone ( ini_block.rtone ) ;                      // Set SCI_BASS to requested value
-  }
-  if ( time_req )                                             // Time to refresh timetxt?
-  {
-    time_req = false ;                                        // Yes, clear request
-    if ( NetworkFound  )                                      // Time available?
+    if ( ( sdokay = mount_SDCARD ( ini_block.sd_cs_pin ) ) )        // Mount possible SD card
     {
-      displaytime ( timetxt ) ;                               // Write to TFT screen
-      displayvolume ( player_getVolume() ) ;                  // Show volume on display
-      displaybattery ( ini_block.bat0, ini_block.bat100,      // Show battery charge on display
-                       adcval ) ;
+      dbgprint ( "SD okay, start scan" ) ;
+      clearFileList() ;                                             // Reserve space for file list
+      scan_SDCARD() ;                                               // Scan all directories for MP3 files
+      scanned = true ;                                              // Card has been scanned now
     }
   }
-  releaseSPI() ;                                              // Release SPI bus
-  if ( mqtt_on )
+  if ( openfile )
   {
-    if ( !mqttclient.connected() )                            // See if connected
+    if ( mp3filelength )                                            // Read until eof
     {
-      mqttreconnect() ;                                       // No, reconnect
+      if ( uxQueueSpacesAvailable ( dataqueue ) )                   // Space in queue?
+      {
+        size_t n = read_SDCARD ( outchunk.buf,
+                                 sizeof(outchunk.buf) ) ;
+        if ( n < sizeof(outchunk.buf) )                             // Incomplete chunk?
+        {
+          memset ( outchunk.buf + n, 0,                             // Yes, clear rest
+                   sizeof(outchunk.buf) - n ) ;
+        }
+        xQueueSend ( dataqueue, &outchunk, 0 ) ;                    // Send to queue
+        mp3filelength -= n ;                                        // Compute rest in file
+      }
     }
     else
     {
-      mqttpub.publishtopic() ;                                // Check if any publishing to do
+      close_SDCARD() ;                                            // Close file
+      openfile = false ;
+      queueToPt ( QSTOPSONG ) ;                                   // Tell playtask to stop song
+      if ( autoplay )                                             // Continue with next track?
+      {
+        dbgprint ( "Autoplay next track" ) ;
+        getNextSDFileName() ;                                     // Select next track
+        myQueueSend ( sdqueue, &startcmd ) ;                      // Start message to myself
+        return ;
+      }
     }
   }
-}
-
-
-//**************************************************************************************************
-//                                     S P F T A S K                                               *
-//**************************************************************************************************
-// Handles display of text, time and volume on TFT.                                                *
-// Handles ADC meassurements.                                                                      *
-// This task runs on a low priority.                                                               *
-//**************************************************************************************************
-void spftask ( void * parameter )
-{
-  while ( true )
+  if ( xQueueReceive ( sdqueue, &sdcmd, 0 ) )                     // New command in queue?
   {
-    handle_spec() ;                                                 // Maybe some special funcs?
-    vTaskDelay ( 100 / portTICK_PERIOD_MS ) ;                       // Pause for a short time
-    adcval = ( 15 * adcval +                                        // Read ADC and do some filtering
-               adc1_get_raw ( ADC1_CHANNEL_0 ) ) / 16 ;
+    dbgprint ( "SDfuncs cmd is %d", sdcmd ) ;
+    switch ( sdcmd )                                              // Yes, examine command
+    {
+      case QSTARTSONG:                                            // Start a new song?
+        if ( openfile )                                           // Still playing?
+        {
+          close_SDCARD() ;                                        // Clode file
+        }
+        queueToPt ( QSTOPSONG ) ;                                 // Tell playtask to stop song
+        if ( ( openfile = connecttofile_SD() ) )                  // Yes, connect to file
+        {
+          dbgprint ( "File opened, track = %d",
+                     getCurrentSDTrackNumber() ) ;
+          audio_ct = String ( "audio/mpeg" ) ;                    // Force mp3 mode
+          myQueueSend ( radioqueue, &stopcmd ) ;                  // Stop playing icecast station
+          radiofuncs() ;                                          // Allow radiouncs to react
+          queueToPt ( QSTARTSONG ) ;                              // Tell playtask
+          autoplay = true ;                                       // Set autoplay mode
+        }
+        else
+        {
+          dbgprint ( "Error opening file" ) ;
+        }
+        break ;
+      case QSTOPSONG:                                             // Stop the song?
+        if ( openfile )                                           // Still playing?
+        {
+          mp3filelength = 0 ;                                     // Yes, force end of file
+          autoplay = false ;                                      // Stop autoplay
+        }
+      default:
+        break ;
+    }
   }
-  //vTaskDelete ( NULL ) ;                                          // Will never arrive here
+#endif
 }
