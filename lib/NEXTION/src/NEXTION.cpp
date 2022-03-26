@@ -6,6 +6,7 @@
 #include "NEXTION.h"
 
 char*       dbgprint ( const char* format, ... ) ;          // Print a formatted debug line
+char        strbuf[40] ;                                    // Buffer for incomplete line
 
 HardwareSerial*   nxtserial = NULL ;                        // Serial port for NEXTION
 void*             NEXTION_tft = (void*)1 ;                  // Dummy declaration
@@ -32,9 +33,10 @@ bool NEXTION_dsp_begin ( uint8_t rx, uint8_t tx )
 {
   dbgprint ( "Init Nextion, pins %d, %d", INIPARS ) ;
   nxtserial = new HardwareSerial ( 2 ) ;
-  nxtserial->begin ( 9600 ) ;                               // Initialize serial port
+  nxtserial->begin ( 115200 ) ;                             // Initialize serial port
   NEXTION_nextioncmd ( "cls BLACK" ) ;                      // Erase screen, non vital
   NEXTION_nextioncmd ( "page 0" ) ;                         // Select page 0
+  strbuf[0] = '\0' ;                                        // Empty string buffer
   return true ;
 }
 
@@ -54,8 +56,29 @@ void NEXTION_dsp_println ( const char* str )
     else
     {
       lnnr = ( lnnr % 10 ) + 1 ;
+      dbgprint ( "NEXTION output '%s' to %d",
+                 str, lnnr ) ;
       nxtserial->printf ( "t%d.txt=\"%s\"\xFF\xFF\xFF", lnnr, str ) ;
     }
+  }
+}
+
+
+void NEXTION_dsp_print ( const char* str )
+{
+  // Print texts like t1.txt="abc"
+  if ( str[0] != '\n' )                                     // End of string?
+  {                                                         // No, add to string
+    int totlen =  strlen ( strbuf ) + strlen (str ) ;       // Will be total length
+    if ( totlen < sizeof(strbuf )  )                        // Protect against overflow
+    {
+      strcat ( strbuf, str ) ;                              // Add to string in buffer
+    }
+  }
+  else
+  {
+    dsp_println ( strbuf ) ;                                // End of line, print buffer
+    strbuf[0] = '\0' ;                                      // Emty buffer for next line
   }
 }
 
