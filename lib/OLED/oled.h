@@ -28,6 +28,8 @@
 #define YELLOW  RED | GREEN
 #define WHITE   RED | GREEN | BLUE
 
+#define DEFTXTSIZ   1                              // Default text size
+
 #define OLED_NPAG    8                             // Number of pages (text lines)
 
 // Data to display.  There are TFTSECS sections

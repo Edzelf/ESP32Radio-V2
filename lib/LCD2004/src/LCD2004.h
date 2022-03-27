@@ -38,6 +38,8 @@
 #define YELLOW  RED | GREEN
 #define WHITE   RED | GREEN | BLUE
 
+#define DEFTXTSIZ   1                        // Default text size
+
 #define DELAY_ENABLE_PULSE_SETTLE    50      // Command requires > 37us to settle
 #define FLAG_BACKLIGHT_ON    0b00001000      // Bit 3, backlight enabled (disabled if clear)
 #define FLAG_ENABLE          0b00000100      // Bit 2, Enable

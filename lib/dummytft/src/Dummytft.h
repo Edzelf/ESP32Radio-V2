@@ -16,6 +16,8 @@
 #define MAGENTA RED | BLUE
 #define YELLOW  RED | GREEN
 #define WHITE   RED | GREEN | BLUE
+#define GREY    RED | GREEN | BLUE
+
 
 // Various macro's to mimic the ST7735 version of display functions
 #define dsp_setRotation()                                          // Use standard landscape format

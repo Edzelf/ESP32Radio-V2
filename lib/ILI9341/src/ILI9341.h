@@ -26,6 +26,9 @@
 #define MAGENTA RED | BLUE
 #define YELLOW  RED | GREEN
 #define WHITE   RED | BLUE | GREEN
+#define GRAY    0x7bf0
+
+#define DEFTXTSIZ   1                                 // Default text size
 
 struct scrseg_struct                                  // For screen segments
 {
