@@ -24,9 +24,9 @@ void dbg_set ( bool onoff )
 //                                          D B G P R I N T                                        *
 //**************************************************************************************************
 // Send a line of info to serial output.  Works like vsprintf(), but checks the DEBUG flag.        *
-// Print only if DEBUG flag is true.  Always returns the formatted string.                         *
+// Print only if DEBUG flag is true.                                                               *
 //**************************************************************************************************
-char* dbgprint ( const char* format, ... )
+void dbgprint ( const char* format, ... )
 {
   static char sbuf[DEBUG_BUFFER_SIZE] ;                // For debug lines
   va_list varArgs ;                                    // For variable number of params
@@ -36,9 +36,9 @@ char* dbgprint ( const char* format, ... )
   va_end ( varArgs ) ;                                 // End of using parameters
   if ( dbgsw )                                         // DEBUG on?
   {
-    printf ( "D: %s\n", sbuf ) ;                       // Yes, print prefix and info
+    Serial.print ( "D: " ) ;                           // Yes, print prefix and info
+    Serial.println ( sbuf ) ;
   }
-  return sbuf ;                                        // Return stored string
 }
 
 
