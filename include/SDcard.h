@@ -32,9 +32,9 @@ struct mp3spec_t                                      // For List of mp3 file on
   #define listsdtracks(a,b,c)    0
   #define connecttofile_SD()      false                  // Dummy connect to file
 #else
-#include <SPI.h>
-#include <SD.h>
-#include <FS.h>
+//#include <SPI.h>
+//#include <SD.h>
+//#include <FS.h>
 #define SDSPEED 4000000                               // SPI speed of SD card
 
 int         SD_filecount = 0 ;                        // Number of filenames in SD_nodelist
