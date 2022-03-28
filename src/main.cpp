@@ -575,7 +575,7 @@ mqttpubc         mqttpub ;                                    // Instance for mq
  #include "LCD2004.h"                                        // For LCD 2004 display (I2C)
 #endif
 #ifdef DUMMYTFT
- #include "Dummytft.h"                                       // For Dummy display
+ #include "dummytft.h"                                       // For Dummy display
 #endif
 #ifdef NEXTION
  #include "NEXTION.h"                                        // For NEXTION display
