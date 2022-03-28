@@ -83,7 +83,7 @@ void NEXTION_dsp_print ( const char* str )
 }
 
 
-void NEXTION_dsp_update()                                   // Updates to the physical screen
+void NEXTION_dsp_update ( bool a )                          // Updates to the physical screen
 {
   uint16_t inx ;
 

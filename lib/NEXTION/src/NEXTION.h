@@ -51,7 +51,7 @@ struct scrseg_struct                                  // For screen segments
 #define dsp_erase()                                                // Erase screen
 #define dsp_getwidth()      320                                    // Get width of screen
 #define dsp_getheight()     240                                    // Get height of screen
-#define dsp_update(a)                                                     // Updates to the physical screen
+#define dsp_update(a)       NEXTION_dsp_update(a)                  // Updates to the physical screen
 #define dsp_usesSPI()       false                                  // Does not use SPI
 #define dsp_begin           NEXTION_dsp_begin                      // Init driver
 
@@ -70,6 +70,8 @@ void NEXTION_displaytime    ( const char* str, uint16_t color = 0xFFFF ) ;
 bool NEXTION_dsp_begin      ( uint8_t rx, uint8_t tx ) ;
 void NEXTION_dsp_println    ( const char* str ) ;
 void NEXTION_dsp_print      ( const char* str ) ;
+void NEXTION_dsp_update     ( bool a ) ;                    // Updates to the physical screen
+
 
 
 #endif
