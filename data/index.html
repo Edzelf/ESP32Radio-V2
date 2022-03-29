@@ -11,6 +11,7 @@
    <li><a class="pull-left active" href="/index.html">Control</a></li>
    <li><a class="pull-left" href="/config.html">Config</a></li>
    <li><a class="pull-left" href="/search.html">Search</a></li>
+   <li><a class="pull-left" href="/mp3play.html">MP3-player</a></li>
    <li><a class="pull-left" href="/about.html">About</a></li>
   </ul>
   <br><br><br>
@@ -21,7 +22,6 @@
    <button class="button" id="volmin" onclick="httpGet('downvolume=2')">VOL-</button>
    <button class="button" id="volplus" onclick="httpGet('upvolume=2')">VOL+</button>
    <button class="button" onclick="httpGet('mute')">(un)MUTE</button>
-   <button class="button" onclick="httpGet('stop')">(un)STOP</button>
    <button class="button" onclick="httpGet('status')">STATUS</button>
    <button class="button" onclick="httpGet('test')">TEST</button>
    <table id="t1" style="width:500px">
@@ -137,8 +137,9 @@
    <br>
    <input type="text" width="600px" size="72" id="resultstr" placeholder="Waiting for a command...."><br>
    <br><br>
-   <p>Find new radio stations at <a target="blank" href="http://www.internet-radio.com">http://www.internet-radio.com</a></p>
-   <p>Examples: us1.internet-radio.com:8105, skonto.ls.lv:8002/mp3, 85.17.121.103:8800</p><br>
+   <p>Find new radio stations at <a target="blank" href="http://www.internet-radio.com">http://www.internet-radio.com</a><br>
+      or use the Search function from the menu.</p>
+   <p>Examples: us5.internet-radio.com:8121, 1a-60er.radionetz.de/1a-60er.mp3, 85.17.121.103:8800</p><br>
   </center>
   <script>
    function httpGet ( theReq )
@@ -192,10 +193,13 @@
    function selectItemByValue(elmnt, value)
    {
      var sel = document.getElementById(elmnt) ;
-     for(var i=0; i < sel.options.length; i++)
+     if (sel)
      {
-       if(sel.options[i].value == value)
-         sel.selectedIndex = i;
+       for(var i=0; i < sel.options.length; i++)
+       {
+         if(sel.options[i].value == value)
+           sel.selectedIndex = i;
+       }
      }
    }
    
@@ -233,15 +237,11 @@
            {
              selectItemByValue ( parts[0], parts[1] ) ;
            }
-           // No volume buttons and tone settings if no VS1053 decoder 
+           // No tone settings if no VS1053 decoder 
            if ( parts[0].indexOf ( "decoder" ) == 0 )
            {
              if ( parts[1].indexOf ( "helix" ) == 0 )
              {
-              var volobj = document.getElementById ( "volmin" ) ;
-              volobj.remove();
-              volobj = document.getElementById ( "volplus" ) ;
-              volobj.remove();
               var toneobj = document.getElementById("t1") ;
               toneobj.deleteRow(2);
               toneobj.deleteRow(1);
