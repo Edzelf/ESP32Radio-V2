@@ -77,9 +77,10 @@
 // 10-02-2022, ES: Included ST7789 display
 // 11-02-2022, ES: SD card implementation
 // 26-03-2022, ES: Fixed NEXTION bug
+// 12-04-2022, ES: Fixed dataqueue bug (NEXT function)
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Sat, 26 Mar 2022 10:50:00 GMT"
+#define VERSION     "Tue, 12 Apr 2022 09:10:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "../include/config.h"                            // Specify display type, decoder type
@@ -282,9 +283,9 @@ char              timetxt[9] ;                           // Converted timeinfo
 char              cmd[130] ;                             // Command from MQTT or Serial
 const qdata_type  stopcmd = QSTOPSONG ;                  // Command for radio/SD
 const qdata_type  startcmd = QSTARTSONG ;                // Command for radio/SD
-QueueHandle_t     radioqueue = nullptr ;                 // Queue for icecast commands
-QueueHandle_t     dataqueue = nullptr ;                  // Queue for mp3 datastream
-QueueHandle_t     sdqueue = nullptr ;                    // For commands to sdfuncs
+QueueHandle_t     radioqueue = NULL ;                    // Queue for icecast commands
+QueueHandle_t     dataqueue = NULL ;                     // Queue for mp3 datastream
+QueueHandle_t     sdqueue = NULL ;                       // For commands to sdfuncs
 qdata_struct      outchunk ;                             // Data to queue
 qdata_struct      inchunk ;                              // Data from queue
 uint8_t*          outqp = outchunk.buf ;                 // Pointer to buffer in outchunk
@@ -334,7 +335,7 @@ bool              dsp_ok = false ;                       // Display okay or not
 int               ir_intcount = 0 ;                      // For test IR interrupts
 bool              spftrigger = false ;                   // To trigger execution of special functions
 std::vector<WifiInfo_t> wifilist ;                       // List with wifi_xx info
-const esp_partition_t*  spiffs = nullptr ;               // Pointer to SPIFFS partition struct
+const esp_partition_t*  spiffs = NULL ;                  // Pointer to SPIFFS partition struct
 
 // nvs stuff
 nvs_page                nvsbuf ;                         // Space for 1 page of NVS info
@@ -592,7 +593,7 @@ mqttpubc         mqttpub ;                                    // Instance for mq
 //**************************************************************************************************
 void myQueueSend ( QueueHandle_t q, const void* msg, int waittime = 0 )
 {
-  if ( q != nullptr )                                     // Check if we have a legal queue
+  if ( q )                                                // Check if we have a legal queue
   {
     xQueueSend ( q, msg, waittime ) ;                     // Queue okay, send to it
   }
@@ -800,7 +801,7 @@ void queueToPt ( qdata_type func )
 
   if ( uxQueueSpacesAvailable ( dataqueue ) == 0 )      // Is there space?
   {
-    xQueueReceive ( sdqueue, &specchunk, 0 ) ;          // No, take out one element
+    xQueueReceive ( dataqueue, &specchunk, 0 ) ;        // No, take out one element
   }
   specchunk.datatyp = func ;                            // Put function in datatyp
   xQueueSendToFront ( dataqueue, &specchunk, 200 ) ;    // Send to queue (First Out)
@@ -2444,7 +2445,7 @@ void setup()
   }
   pi = esp_partition_find ( ESP_PARTITION_TYPE_DATA,     // Get partition iterator for
                             ESP_PARTITION_SUBTYPE_ANY,   // All data partitions
-                            nullptr ) ;
+                            NULL ) ;
   while ( pi )
   {
     ps = esp_partition_get ( pi ) ;                      // Get partition struct
@@ -2462,12 +2463,12 @@ void setup()
     }
     pi = esp_partition_next ( pi ) ;                     // Find next
   }
-  if ( nvs == nullptr )
+  if ( nvs == NULL )
   {
     dbgprint ( "Partition NVS not found!" ) ;            // Very unlikely...
     while ( true ) ;                                     // Impossible to continue
   }
-  if ( spiffs == nullptr )
+  if ( spiffs == NULL )
   {
     dbgprint ( "Partition spiffs not found!" ) ;         // Very unlikely...
     while ( true ) ;                                     // Impossible to continue
@@ -3240,6 +3241,7 @@ void radiofuncs()
         if ( newpreset >= 0 )                                     // Is negative for "station=xxxxx"
         {
           host = readhostfrompref ( newpreset ) ;                 // Get station belonging to preset
+          dbgprint ( "Host selected is %s", host.c_str() ) ;      // Show result
         }
         else
         {
