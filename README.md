@@ -8,3 +8,4 @@ Updates:
 - 05-oct-2021: Fixed internal DAC output, fixed OTA upload.
 - 06-oct-2021: Fixed AP mode.
 - 26-mar-2022: Fixed NEXTION bug.
+- 12-apr-2022: Fixed queue bug (NEXT function).
