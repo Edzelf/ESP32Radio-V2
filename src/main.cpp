@@ -78,9 +78,10 @@
 // 11-02-2022, ES: SD card implementation
 // 26-03-2022, ES: Fixed NEXTION bug
 // 12-04-2022, ES: Fixed dataqueue bug (NEXT function)
+// 13-04-2022, ES: Fixed redirect bug (preset was reset)
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Tue, 12 Apr 2022 09:10:00 GMT"
+#define VERSION     "Wed, 13 Apr 2022 14:10:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "../include/config.h"                            // Specify display type, decoder type
@@ -144,7 +145,6 @@ const char* analyzeCmd ( const char* par, const char* val ) ;
 void        chomp ( String &str ) ;
 String      nvsgetstr ( const char* key ) ;
 bool        nvssearch ( const char* key ) ;
-void        mp3loop() ;
 void        sdfuncs() ;
 void        stop_mp3client () ;
 void        tftset ( uint16_t inx, const char *str ) ;
@@ -304,6 +304,7 @@ int               mbitrate ;                             // Measured bitrate
 int               metaint = 0 ;                          // Number of databytes between metadata
 bool              internal_dac ;                         // True if internal DAC used
 int16_t           newpreset ;                            // Requested preset
+int16_t           oldpreset ;                            // Requested preset (before redirection)
 String            host ;                                 // The URL to connect to or file to play
 String            playlist ;                             // The URL of the specified playliFDst
 bool              reqtone = false ;                      // New tone setting requested
@@ -417,7 +418,7 @@ struct touchpin_struct                                   // For programmable inp
   bool           reserved ;                              // Reserved for connected devices
   bool           avail ;                                 // Pin is available for a command
   String         command ;                               // Command to execute when activated
-  // Example: "uppreset=1"
+                                                         // Example: "uppreset=1"
   bool           cur ;                                   // Current state, true = HIGH, false = LOW
   int16_t        count ;                                 // Counter number of times low level
 } ;
@@ -2141,11 +2142,8 @@ void  mk_lsan()
 //**************************************************************************************************
 String getradiostatus()
 {
-  char                pnr[3] ;                           // Preset as 2 character, i.e. "03"
-
-  sprintf ( pnr, "%02d", newpreset ) ;                   // Current preset
   return String ( "preset=" ) +                          // Add preset setting
-         String ( pnr ) +
+         String ( newpreset ) +
          String ( "\nvolume=" ) +                        // Add volume setting
          String ( String ( ini_block.reqvol ) ) +
          String ( "\ntoneha=" ) +                        // Add tone setting HA
@@ -2374,37 +2372,6 @@ void onDisConnect ( void* arg, AsyncClient* client )
 {
   dbgprint ( "MP3 host disconnected!" ) ;
 }
-
-#ifdef bla
-void memtest()
-{
-  struct xbuf
-  {
-    uint8_t ybuf[10000] ;
-  } ;
-  uint8_t*  p ;
-  size_t    space ;
-
-  while ( ( space = heap_caps_get_largest_free_block ( MALLOC_CAP_8BIT ) ) > 20000 )
-  {
-    dbgprint ( "free space %d", space ) ;
-    p = (uint8_t*)new ( xbuf ) ;
-    for ( int i = 0 ; i < sizeof(xbuf) ; i++ )
-    {
-      p[i] = ( i / 3 ) & 0xFF ;
-    }
-    for ( int i = 0 ; i < sizeof(xbuf) ; i++ )
-    {
-      if ( p[i] != ( ( i / 3 ) & 0xFF ) )
-      {
-        dbgprint ( "Compare error, i is %d, data is %d, should be %d",
-                   i, p[i], ( i / 3 ) & 0xFF ) ;
-        delay ( 100 ) ;
-      }
-    }
-  }
-}
-#endif
 
 
 //**************************************************************************************************
@@ -3241,11 +3208,12 @@ void radiofuncs()
         if ( newpreset >= 0 )                                     // Is negative for "station=xxxxx"
         {
           host = readhostfrompref ( newpreset ) ;                 // Get station belonging to preset
-          dbgprint ( "Host selected is %s", host.c_str() ) ;      // Show result
+          dbgprint ( "Host selected is %d:%s",                    // Show result
+                     newpreset, host.c_str() ) ;
         }
         else
         {
-          newpreset = 0 ;                                         // Do not leave preset negative
+          newpreset = oldpreset ;                                 // Do not leave preset negative
         }
         connecttohost() ;                                         // Connect to stream host
         connected = true ;                                        // Remember connection state
@@ -3265,80 +3233,12 @@ void radiofuncs()
 
 
 //**************************************************************************************************
-//                                           M P 3 L O O P                                         *
-//**************************************************************************************************
-// Called from the main loop() for the mp3 functions.                                              *
-// Act on new staion requests.                                                                     *
-//**************************************************************************************************
-void mp3loop()
-{
-#ifdef bla
-  if ( newpreset != currentpreset )                       // New station or next from playlist requested?
-  {
-    if ( datamode != STOPPED )                            // Yes, still busy?
-    {
-      setdatamode ( STOPREQD ) ;                          // Yes, request STOP
-    }
-    else
-    {
-      if ( playlist_num )                                 // Playing from playlist?
-      { // Yes, retrieve URL of playlist
-        playlist_num += newpreset -
-                        currentpreset ;                   // Next entry in playlist
-        newpreset = currentpreset ;                       // Stay at current preset
-      }
-      else
-      {
-        host = readhostfrompref() ;                       // Lookup preset in preferences
-        icyname = host ;                                  // First guess station name
-        int inx = icyname.indexOf ( "#" ) ;               // Get position of "#"
-        if ( inx > 0 )                                    // Hash sign present?
-        {
-          icyname.remove ( 0, inx + 1 ) ;                 // Yes, remove non-comment part
-        }
-        chomp ( icyname ) ;                               // Remove garbage from description
-        tftset ( 2, icyname ) ;                           // Set screen segment bottom part
-        mqttpub.trigger ( MQTT_ICYNAME ) ;                // Request publishing to MQTT
-        chomp ( host ) ;                                  // Get rid of part after "#"
-      }
-      dbgprint ( "New preset/file requested (%d/%d) from %s",
-                 newpreset, playlist_num, host.c_str() ) ;
-      if ( host != ""  )                                  // Preset in ini-file?
-      {
-        myQueueSend ( radioqueue, &startcmd ) ;           // Signal radiofuncs()
-      }
-      else
-      {
-        // This preset is not available, return to preset 0, will be handled in next mp3loop()
-        dbgprint ( "No host for this preset" ) ;
-        newpreset = 0 ;                                   // Wrap to first station
-      }
-      currentpreset = newpreset ;
-    }
-  }
-  if ( datamode == STOPREQD )                             // STOP requested?
-  {
-    dbgprint ( "STOP requested" ) ;
-    stop_mp3client() ;                                    // Disconnect if still connected
-    chunked = false ;                                     // Not longer chunked
-    datacount = 0 ;                                       // Reset datacount
-    outqp = outchunk.buf ;                                // and pointer
-    myQueueSend ( radioqueue, &stopcmd ) ;                // Queue a request to stop the song
-    metaint = 0 ;                                         // No metaint known now
-    setdatamode ( STOPPED ) ;                             // Yes, state becomes STOPPED
-  }
-#endif
-}
-
-
-//**************************************************************************************************
 //                                           L O O P                                               *
 //**************************************************************************************************
 // Main loop of the program.                                                                       *
 //**************************************************************************************************
 void loop()
 {
-  mp3loop() ;                                       // Do mp3 related actions
   if ( updatereq )                                  // Software update requested?
   {
     resetreq = true ;                               // And reset
@@ -3617,6 +3517,7 @@ void handlebyte_ch ( uint8_t b )
         if ( redirection )                             // Redirection?
         {
           setdatamode ( INIT ) ;                       // Yes, mode to INIT again
+          oldpreset = newpreset ;                      // Remember current preset
           newpreset = -1 ;                             // Mark host already set
           myQueueSend ( radioqueue, &startcmd ) ;      // Restart with new found host
         }
