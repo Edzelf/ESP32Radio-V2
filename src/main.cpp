@@ -78,10 +78,10 @@
 // 11-02-2022, ES: SD card implementation
 // 26-03-2022, ES: Fixed NEXTION bug
 // 12-04-2022, ES: Fixed dataqueue bug (NEXT function)
-// 13-04-2022, ES: Fixed redirect bug (preset was reset)
+// 13-04-2022, ES: Fixed redirect bug (preset was reset), fixed playlist
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Wed, 13 Apr 2022 14:10:00 GMT"
+#define VERSION     "Wed, 13 Apr 2022 15:10:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "../include/config.h"                            // Specify display type, decoder type
@@ -3460,7 +3460,7 @@ void handlebyte_ch ( uint8_t b )
           {
             host = metaline.substring ( 17 ) ;         // Yes, get new URL
           }
-          else if ( lcml.indexOf ( "https://" ) )      // Redirection with ttps://?
+          else if ( lcml.indexOf ( "https://" ) )      // Redirection with https://?
           {
             host = metaline.substring ( 18 ) ;         // Yes, get new URL
           }
@@ -3683,10 +3683,12 @@ void handlebyte_ch ( uint8_t b )
         {
           host = metaline ;                            // Yes, set new host
         }
-        connecttohost() ;                              // Connect to stream host
+        setdatamode ( INIT ) ;                         // Yes, mode to INIT again
+        oldpreset = newpreset ;                        // Remember current preset
+        newpreset = -1 ;                               // Mark host already set
+        myQueueSend ( radioqueue, &startcmd ) ;        // Restart with new found host
       }
       metalinebfx = 0 ;                                // Prepare for next line
-      host = playlist ;                                // Back to the .m3u host
       playlistcnt++ ;                                  // Next entry in playlist
     }
   }
