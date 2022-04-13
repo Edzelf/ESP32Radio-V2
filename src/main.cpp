@@ -81,7 +81,7 @@
 // 13-04-2022, ES: Fixed redirect bug (preset was reset), fixed playlist
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Wed, 13 Apr 2022 15:10:00 GMT"
+#define VERSION     "Wed, 13 Apr 2022 17:40:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "../include/config.h"                            // Specify display type, decoder type
@@ -1442,6 +1442,7 @@ bool connectwifi()
                " name %s and password %s.",
                NAME, NAME ) ;
     WiFi.softAP ( NAME, NAME ) ;                        // This ESP will be an AP
+    ipaddress = String ( "192.168.4.1") ;               // IP adsress as always
   }
   else
   {
@@ -1449,8 +1450,8 @@ bool connectwifi()
     tftlog ( WiFi.SSID().c_str(), true ) ;
     dbgprint ( "SSID = %s",                             // Format string with SSID connected to
                       WiFi.SSID().c_str() ) ;
+    ipaddress = WiFi.localIP().toString() ;             // Form IP address
   }
-  ipaddress = WiFi.localIP().toString() ;               // Form IP address
   pIP = ipaddress.c_str() ;                             // As c-string
   dbgprint ( "IP = %s", pIP ) ;
   tftlog ( "IP = " ) ;                                  // Show IP
