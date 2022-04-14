@@ -74,20 +74,22 @@
 // 23-08-2021, ES: Version with software MP3/AAC decoders.
 // 05-10-2021, ES: Fixed internal DAC output, fixed OTA update.
 // 06-10-2021, ES: Fixed AP mode.
-// 10-02-2022, ES: Included ST7789 display
-// 11-02-2022, ES: SD card implementation
-// 26-03-2022, ES: Fixed NEXTION bug
-// 12-04-2022, ES: Fixed dataqueue bug (NEXT function)
-// 13-04-2022, ES: Fixed redirect bug (preset was reset), fixed playlist
+// 10-02-2022, ES: Included ST7789 display.
+// 11-02-2022, ES: SD card implementation.
+// 26-03-2022, ES: Fixed NEXTION bug.
+// 12-04-2022, ES: Fixed dataqueue bug (NEXT function).
+// 13-04-2022, ES: Fixed redirect bug (preset was reset), fixed playlist.
+// 14-04-2022, ES: Added posibility for a fixed WiFi network.
+//
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Wed, 13 Apr 2022 17:40:00 GMT"
+#define VERSION     "Thu, 14 Apr 2022 09:10:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "../include/config.h"                            // Specify display type, decoder type
 #include <nvs.h>                                          // Access to NVS
 #include <PubSubClient.h>                                 // MTTQ access
-#include <WiFiMulti.h>                                    // Handle multiple WiFi networks
+#include <WiFiMulti.h>                                  // Handle multiple WiFi networks
 #include <ESPmDNS.h>                                      // For multicast DNS
 #include <time.h>                                         // Time functions
 #include <SPI.h>                                          // For SPI handling
@@ -220,7 +222,6 @@ struct ini_struct
 
 struct WifiInfo_t                                     // For list with WiFi info
 {
-  uint8_t inx ;                                       // Index as in "wifi_00"
   char * ssid ;                                       // SSID for an entry
   char * passphrase ;                                 // Passphrase for an entry
 } ;
@@ -335,8 +336,9 @@ uint16_t          bltimer = 0 ;                          // Backlight time-out c
 bool              dsp_ok = false ;                       // Display okay or not
 int               ir_intcount = 0 ;                      // For test IR interrupts
 bool              spftrigger = false ;                   // To trigger execution of special functions
-std::vector<WifiInfo_t> wifilist ;                       // List with wifi_xx info
+const char*       fixedwifi = "" ;                       // Used for FIXEDWIFI option
 const esp_partition_t*  spiffs = NULL ;                  // Pointer to SPIFFS partition struct
+std::vector<WifiInfo_t> wifilist ;                       // List with wifi_xx info
 
 // nvs stuff
 nvs_page                nvsbuf ;                         // Space for 1 page of NVS info
@@ -1407,8 +1409,7 @@ bool connectwifi()
 {
   bool        localAP = false ;                         // True if only local AP is left
   const char* pIP ;                                     // poiter to IP address
-
-  WifiInfo_t winfo ;                                    // Entry from wifilist
+  WifiInfo_t  winfo ;                                   // Entry from wifilist
 
   WiFi.disconnect ( true ) ;                            // After restart the router could
   WiFi.softAPdisconnect ( true ) ;                      // still keep the old connection
@@ -1441,8 +1442,10 @@ bool connectwifi()
     dbgprint ( "WiFi Failed!  Trying to setup AP with"
                " name %s and password %s.",
                NAME, NAME ) ;
-    WiFi.softAP ( NAME, NAME ) ;                        // This ESP will be an AP
-    ipaddress = String ( "192.168.4.1") ;               // IP adsress as always
+    WiFi.disconnect ( true ) ;                          // After restart the router could
+    WiFi.softAPdisconnect ( true ) ;                    // still keep the old connection
+    IPAddress ipAP = WiFi.softAP ( NAME, NAME ) ;       // This ESP will be an AP
+    ipaddress = ipAP.toString() ;                       // IP address, usually 192.168.4.1
   }
   else
   {
@@ -1461,6 +1464,7 @@ bool connectwifi()
   #endif
   return ( localAP == false ) ;                         // Return result of connection
 }
+
 
 //**************************************************************************************************
 //                                           O T A S T A R T                                       *
@@ -2101,7 +2105,7 @@ void scanIR()
 //**************************************************************************************************
 void  mk_lsan()
 {
-  uint8_t     i ;                                        // Loop control
+  int16_t     i ;                                        // Loop control
   char        key[10] ;                                  // For example: "wifi_03"
   String      buf ;                                      // "SSID/password"
   String      lssid, lpw ;                               // Last read SSID and password from nvs
@@ -2109,29 +2113,38 @@ void  mk_lsan()
   WifiInfo_t  winfo ;                                    // Element to store in list
 
   dbgprint ( "Create list with acceptable WiFi networks" ) ;
-  for ( i = 0 ; i < 100 ; i++ )                          // Examine wifi_00 .. wifi_99
+  for ( i = -1 ; i < 100 ; i++ )                         // Examine FIXEDWIFI, wifi_00 .. wifi_99
   {
-    sprintf ( key, "wifi_%02d", i ) ;                    // Form key in preferences
-    if ( nvssearch ( key  ) )                            // Does it exists?
+    buf = String ( "" ) ;                                // Clear buffer with ssid/passwd
+    if ( i == -1 )                                       // Examine FIXEDWIFI if defined
     {
-      buf = nvsgetstr ( key ) ;                          // Get the contents
-      inx = buf.indexOf ( "/" ) ;                        // Find separator between ssid and password
-      if ( inx > 0 )                                     // Separator found?
+      if ( *fixedwifi )                                  // FIXEDWIFI set and not empty?
       {
-        lpw = buf.substring ( inx + 1 ) ;                // Isolate password
-        lssid = buf.substring ( 0, inx ) ;               // Holds SSID now
-        dbgprint ( "Added %s to list of networks",
-                   lssid.c_str() ) ;
-        winfo.inx = i ;                                  // Create new element for wifilist ;
-        winfo.ssid = strdup ( lssid.c_str() ) ;          // Set ssid of element
-        winfo.passphrase = strdup ( lpw.c_str() ) ;
-        wifilist.push_back ( winfo ) ;                   // Add to list
-        wifiMulti.addAP ( winfo.ssid,                    // Add to wifi acceptable network list
-                          winfo.passphrase ) ;
+        buf = String ( fixedwifi ) ;
       }
     }
+    else
+    {
+      sprintf ( key, "wifi_%02d", i ) ;                  // Form key in preferences
+      if ( nvssearch ( key  ) )                          // Does it exists?
+      {
+        buf = nvsgetstr ( key ) ;                        // Get the contents, like "ssid/password"
+      }
+    }
+    inx = buf.indexOf ( "/" ) ;                          // Find separator between ssid and password
+    if ( inx > 0 )                                       // Separator found?
+    {
+      lpw = buf.substring ( inx + 1 ) ;                  // Isolate password
+      lssid = buf.substring ( 0, inx ) ;                 // Holds SSID now
+      winfo.ssid = strdup ( lssid.c_str() ) ;            // Set ssid of new element for wifilist
+      winfo.passphrase = strdup ( lpw.c_str() ) ;
+      wifilist.push_back ( winfo ) ;                     // Add to list
+      wifiMulti.addAP ( winfo.ssid,                      // Add to wifi acceptable network list
+                        winfo.passphrase ) ;
+      dbgprint ( "Added %s to list of networks",
+                  lssid.c_str() ) ;
+    }
   }
-  dbgprint ( "End adding networks" ) ; ////
 }
 
 
@@ -2431,6 +2444,9 @@ void setup()
     }
     pi = esp_partition_next ( pi ) ;                     // Find next
   }
+  #ifdef FIXEDWIFI                                       // Set fixedwifi if defined
+    fixedwifi = FIXEDWIFI ;
+  #endif
   if ( nvs == NULL )
   {
     dbgprint ( "Partition NVS not found!" ) ;            // Very unlikely...
@@ -2651,7 +2667,10 @@ void setup()
     dsp_erase() ;                                         // Clear screen
   }
   tftset ( 0, NAME ) ;                                    // Set screen segment text top line
-  myQueueSend ( radioqueue, &startcmd ) ;                 // Start player in radio mode
+  if ( NetworkFound )                                     // Start with preset if network available
+  {
+    myQueueSend ( radioqueue, &startcmd ) ;               // Start player in radio mode
+  }
 }
 
 
