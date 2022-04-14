@@ -10,3 +10,4 @@ Updates:
 - 26-mar-2022: Fixed NEXTION bug.
 - 12-apr-2022: Fixed queue bug (NEXT function).
 - 13-apr-2022: Fixed redirect bug (preset was reset), fixed playlist bug.
+- 14-apr-2022: Add FIXEDWIFI in config.h to simplify WiFi set-up.
