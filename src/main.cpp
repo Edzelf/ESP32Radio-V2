@@ -80,16 +80,17 @@
 // 12-04-2022, ES: Fixed dataqueue bug (NEXT function).
 // 13-04-2022, ES: Fixed redirect bug (preset was reset), fixed playlist.
 // 14-04-2022, ES: Added posibility for a fixed WiFi network.
+// 15-04-2022, ES: Redesigned station selection.
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Thu, 14 Apr 2022 09:10:00 GMT"
+#define VERSION     "Fri, 15 Apr 2022 11:30:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "../include/config.h"                            // Specify display type, decoder type
 #include <nvs.h>                                          // Access to NVS
 #include <PubSubClient.h>                                 // MTTQ access
-#include <WiFiMulti.h>                                  // Handle multiple WiFi networks
+#include <WiFiMulti.h>                                    // Handle multiple WiFi networks
 #include <ESPmDNS.h>                                      // For multicast DNS
 #include <time.h>                                         // Time functions
 #include <SPI.h>                                          // For SPI handling
@@ -165,6 +166,8 @@ void        handle_saveprefs ( AsyncWebServerRequest *request ) ;
 void        handle_getdefs   ( AsyncWebServerRequest *request ) ;
 void        handle_settings  ( AsyncWebServerRequest *request ) ;
 void        handle_mp3list   ( AsyncWebServerRequest *request ) ;
+String      readhostfrompref ( int16_t preset ) ;
+
 
 
 //**************************************************************************************************
@@ -252,6 +255,21 @@ struct keyname_t                                      // For keys in NVS
   char      Key[16] ;                                 // Max length is 15 plus delimeter
 } ;
 
+// Preset info
+enum station_state_t { ST_PRESET, ST_REDIRECT,        // Possible preset status
+                       ST_PLAYLIST, ST_STATION } ;
+struct preset_info_t
+{
+    int16_t            preset ;                       // Preset to play
+    int16_t            highest_preset ;               // Highest possible preset
+    station_state_t    station_state ;                // Station state
+    int16_t            playlistnr ;                   // Index in playlist
+    int16_t            highest_playlistnr ;           // Highest possible preset
+    String             playlisthost ;                 // Host with playlist
+    String             host ;                         // Resulting host
+} ;
+
+
 //**************************************************************************************************
 // Global data section.                                                                            *
 //**************************************************************************************************
@@ -271,6 +289,7 @@ enum datamode_t { INIT = 0x1, HEADER = 0x2, DATA = 0x4,      // State for datast
 int               numSsid ;                              // Number of available WiFi networks
 WiFiMulti         wifiMulti ;                            // Possible WiFi networks
 bool              ota = false ;                          // Allow OTA updates
+preset_info_t     presetinfo ;                           // Info about the current or new station
 ini_struct        ini_block ;                            // Holds configurable data
 AsyncWebServer    cmdserver ( 80 ) ;                     // Instance of embedded webserver, port 80
 AsyncClient*      mp3client = NULL ;                     // An instance of the mp3 client
@@ -304,10 +323,6 @@ int               bitrate ;                              // Bitrate in kb/sec
 int               mbitrate ;                             // Measured bitrate
 int               metaint = 0 ;                          // Number of databytes between metadata
 bool              internal_dac ;                         // True if internal DAC used
-int16_t           newpreset ;                            // Requested preset
-int16_t           oldpreset ;                            // Requested preset (before redirection)
-String            host ;                                 // The URL to connect to or file to play
-String            playlist ;                             // The URL of the specified playliFDst
 bool              reqtone = false ;                      // New tone setting requested
 bool              muteflag = false ;                     // Mute output
 bool              resetreq = false ;                     // Request to reset the ESP32
@@ -319,7 +334,6 @@ String            networks ;                             // Found networks in th
 uint16_t          mqttcount = 0 ;                        // Counter MAXMQTTCONNECTS
 int8_t            playingstat = 0 ;                      // 1 if radio is playing (for MQTT)
 int16_t           playlist_num = 0 ;                     // Nonzero for selection from playlist
-bool              localfile = false ;                    // True if local (SD) file selected
 bool              chunked = false ;                      // Station provides chunked transfer
 int               chunkcount = 0 ;                       // Counter for chunked transfer
 String            http_getcmd ;                          // Contents of last GET command
@@ -468,17 +482,17 @@ class mqttpubc                                           // For MQTT publishing
     // Publication topics for MQTT.  The topic will be pefixed by "PREFIX/", where PREFIX is replaced
     // by the the mqttprefix in the preferences.
   protected:
-    mqttpub_struct amqttpub[9] =                   // Definitions of various MQTT topic to publish
+    mqttpub_struct amqttpub[9] =                         // Definitions of various MQTT topic to publish
     { // Index is equal to enum above
-      { "ip",              MQSTRING, &ipaddress,        false }, // Definition for MQTT_IP
-      { "icy/name",        MQSTRING, &icyname,          false }, // Definition for MQTT_ICYNAME
-      { "icy/streamtitle", MQSTRING, &icystreamtitle,   false }, // Definition for MQTT_STREAMTITLE
-      { "nowplaying",      MQSTRING, &ipaddress,        false }, // Definition for MQTT_NOWPLAYING
-      { "preset" ,         MQINT8,   &newpreset,        false }, // Definition for MQTT_PRESET
-      { "volume" ,         MQINT8,   &ini_block.reqvol, false }, // Definition for MQTT_VOLUME
-      { "playing",         MQINT8,   &playingstat,      false }, // Definition for MQTT_PLAYING
-      { "playlist/pos",    MQINT16,  &playlist_num,     false }, // Definition for MQTT_PLAYLISTPOS
-      { NULL,              0,        NULL,              false }  // End of definitions
+      { "ip",              MQSTRING, &ipaddress,             false }, // Definition for MQTT_IP
+      { "icy/name",        MQSTRING, &icyname,               false }, // Definition for MQTT_ICYNAME
+      { "icy/streamtitle", MQSTRING, &icystreamtitle,        false }, // Definition for MQTT_STREAMTITLE
+      { "nowplaying",      MQSTRING, &ipaddress,             false }, // Definition for MQTT_NOWPLAYING
+      { "preset" ,         MQINT8,   &presetinfo.preset,     false }, // Definition for MQTT_PRESET
+      { "volume" ,         MQINT8,   &ini_block.reqvol,      false }, // Definition for MQTT_VOLUME
+      { "playing",         MQINT8,   &playingstat,           false }, // Definition for MQTT_PLAYING
+      { "playlist/pos",    MQINT16,  &presetinfo.playlistnr, false }, // Definition for MQTT_PLAYLISTPOS
+      { NULL,              0,        NULL,                   false }  // End of definitions
     } ;
   public:
     void          trigger ( uint8_t item ) ;                      // Trigger publishig for one item
@@ -889,6 +903,74 @@ void listNetworks()
 
 
 //**************************************************************************************************
+//                                          U P D A T E N R                                        *
+//**************************************************************************************************
+// Used by nextPreset because update for preset and playlist number is about the same.             *
+// Modify the pnr, handle over- and underflow. handle relative setting.                            *
+//**************************************************************************************************
+bool updateNr ( int16_t* pnr, int16_t maxnr, int16_t nr, bool relative )
+{
+  bool res = true ;                                           // Assume positive result
+
+  dbgprint ( "updateNr %d <= %d to %d, relative is %d",
+             *pnr, maxnr, nr, relative ) ;
+  if ( relative )                                             // Relative to pnr?
+  {
+    *pnr += nr ;                                              // Yes, compute new pnr
+  }
+  else
+  {
+    *pnr = nr ;                                               // Not relative, set direct pnr
+  }
+  if ( *pnr < 0 )                                             // Check result
+  {
+    res = false ;                                             // Negative result, set bad result
+    *pnr = maxnr ;                                            // and wrap
+  }
+  if ( *pnr > maxnr )                                         // Check if result beyond max
+  {
+    res = false ;                                             // Too high, set bad result
+    *pnr = 0 ;                                                // and wrap
+  }
+  dbgprint ( "updateNr result is %d", *pnr ) ;
+  return res ;                                                // Return the result
+}
+
+
+//**************************************************************************************************
+//                                          N E X T P R E S E T                                    *
+//**************************************************************************************************
+// Set the preset for the next station.  May be relative.                                          *
+//**************************************************************************************************
+void nextPreset ( int16_t pnr, bool relative = false )
+{
+  if ( ( presetinfo.station_state == ST_STATION ) ||           // In station mode?
+       ( presetinfo.station_state == ST_REDIRECT ) )           // or redirect mode?
+  {
+    presetinfo.station_state = ST_PRESET ;                     // No "next" in station/redirect mode
+  }
+  if ( presetinfo.station_state == ST_PLAYLIST )               // In playlist mode?
+  {
+    if ( ! updateNr ( &presetinfo.playlistnr,                  // Yes, next index possible?
+                      presetinfo.highest_playlistnr,
+                      pnr, relative ) )
+    {
+      presetinfo.station_state = ST_PRESET ;                   // No, end playlist mode
+    }
+  }
+  if ( presetinfo.station_state == ST_PRESET )                 // In preset mode?
+  {
+    updateNr ( &presetinfo.preset,                             // Select next preset
+               presetinfo.highest_preset,
+               pnr, relative ) ;
+    presetinfo.host = readhostfrompref ( presetinfo.preset ) ; // Set host
+    dbgprint ( "nextPreset is %d, host %s",
+               presetinfo.preset, presetinfo.host.c_str() ) ;
+  }
+}
+
+
+//**************************************************************************************************
 //                                          T I M E R 1 0 S E C                                    *
 //**************************************************************************************************
 // Extra watchdog.  Called every 10 seconds.                                                       *
@@ -915,17 +997,17 @@ void IRAM_ATTR timer10sec()
       {
         ESP.restart() ;                           // Reset the CPU, probably no return
       }
-      if ( datamode & ( PLAYLISTDATA |            // In playlist mode?
-                        PLAYLISTINIT |
-                        PLAYLISTHEADER ) )
-      {
-        playlist_num = 0 ;                        // Yes, end of playlist
-      }
-      if ( ( morethanonce > 0 ) ||                // Happened more than once?
-           ( playlist_num > 0 ) )                 // Or playlist active?
+      //if ( datamode & ( PLAYLISTDATA |          // In playlist mode?
+      //                  PLAYLISTINIT |
+      //                  PLAYLISTHEADER ) )
+      //{
+      //  playlist_num = 0 ;                      // Yes, end of playlist
+      //}
+      //if ( ( morethanonce > 0 ) ||              // Happened more than once?
+      //     ( playlist_num > 0 ) )               // Or playlist active?
+      if ( morethanonce > 0 )                     // Happened more than once?
       {
         datamode = STOPREQD ;                     // Stop player
-        newpreset++ ;                             // Yes, try next channel
       }
       morethanonce++ ;                            // Count the fails
     }
@@ -1210,7 +1292,7 @@ void showstreamtitle ( const char *ml, bool full )
   if ( strstr ( ml, "StreamTitle=" ) )
   {
     dbgprint ( "Streamtitle found, %d bytes", strlen ( ml ) ) ;
-    //dbgprint ( ml ) ;
+    dbgprint ( ml ) ;
     p1 = (char*)ml + 12 ;                       // Begin of artist and title
     if ( ( p2 = strstr ( ml, ";" ) ) )          // Search for end of title
     {
@@ -1290,71 +1372,70 @@ void stop_mp3client ()
 //**************************************************************************************************
 //                                    C O N N E C T T O H O S T                                    *
 //**************************************************************************************************
-// Connect to the Internet radio server specified by newpreset.                                    *
+// Connect to the Internet radio server specified by presetinfo.                                   *
 //**************************************************************************************************
 bool connecttohost()
 {
-  int         inx ;                                 // Position of ":" in hostname
-  uint16_t    port = 80 ;                           // Port number for host
-  String      extension = "/" ;                     // May be like "/mp3" in "skonto.ls.lv:8002/mp3"
-  String      hostwoext ;                           // Host without extension and portnumber
-  String      auth  ;                               // For basic authentication
-  char        getreq[300] ;                         // GET comand for MP3 host
-  int         retrycount = 0 ;                      // Count for connect
+  int         inx ;                                  // Position of ":" in hostname
+  uint16_t    port = 80 ;                            // Port number for host
+  String      extension = "/" ;                      // May be like "/mp3" in "skonto.ls.lv:8002/mp3"
+  String      hostwoext ;                            // Host without extension and portnumber
+  String      auth  ;                                // For basic authentication
+  char        getreq[300] ;                          // GET comand for MP3 host
+  int         retrycount = 0 ;                       // Count for connect
 
-  stop_mp3client() ;                                // Disconnect if still connected
-  chomp ( host ) ;                                  // Do some filtering
-  hostwoext = host ;                                // Assume host does not have extension
-  dbgprint ( "Connect to host %s", host.c_str() ) ;
-  tftset ( 0, NAME ) ;                              // Set screen segment text top line
-  tftset ( 1, "" ) ;                                // Clear song and artist
-  displaytime ( "" ) ;                              // Clear time on TFT screen
-  setdatamode ( INIT ) ;                            // Start default in metamode
-  chunked = false ;                                 // Assume not chunked
-  if ( host.endsWith ( ".m3u" ) )                   // Is it an m3u playlist?
+  stop_mp3client() ;                                 // Disconnect if still connected
+  chomp ( presetinfo.host ) ;                        // Do some filtering
+  hostwoext = presetinfo.host ;                      // Assume host does not have extension
+  dbgprint ( "Connect to host %s",
+             presetinfo.host.c_str() ) ;
+  tftset ( 0, NAME ) ;                               // Set screen segment text top line
+  tftset ( 1, "" ) ;                                 // Clear song and artist
+  displaytime ( "" ) ;                               // Clear time on TFT screen
+  setdatamode ( INIT ) ;                             // Start default in INIT mode
+  chunked = false ;                                  // Assume not chunked
+  if ( presetinfo.host.endsWith ( ".m3u" ) )         // Is it an m3u playlist?
   {
-    playlist = host ;                               // Save copy of playlist URL
-    setdatamode ( PLAYLISTINIT ) ;                  // Yes, start in PLAYLIST mode
-    if ( playlist_num == 0 )                        // First entry to play?
-    {
-      playlist_num = 1 ;                            // Yes, set index
-    }
-    dbgprint ( "Playlist request, entry %d", playlist_num ) ;
+    presetinfo.station_state = ST_PLAYLIST ;         // Yes, change station state
+    presetinfo.playlisthost = presetinfo.host ;      // Save copy of playlist URL
+    setdatamode ( PLAYLISTINIT ) ;                   // Yes, start in PLAYLIST mode
+    dbgprint ( "Playlist request, entry %d",
+               presetinfo.playlistnr ) ;
   }
   // In the URL there may be an extension, like noisefm.ru:8000/play.m3u&t=.m3u
-  inx = host.indexOf ( "/" ) ;                      // Search for begin of extension
-  if ( inx > 0 )                                    // Is there an extension?
+  inx = presetinfo.host.indexOf ( "/" ) ;            // Search for begin of extension
+  if ( inx > 0 )                                     // Is there an extension?
   {
-    extension = host.substring ( inx ) ;            // Yes, change the default
-    hostwoext = host.substring ( 0, inx ) ;         // Host without extension
+    extension = hostwoext.substring ( inx ) ;        // Yes, change the default
+    hostwoext = hostwoext.substring ( 0, inx ) ;     // Host without extension
   }
   // In the host there may be a portnumber
-  inx = hostwoext.indexOf ( ":" ) ;                 // Search for separator
-  if ( inx >= 0 )                                   // Portnumber available?
+  inx = hostwoext.indexOf ( ":" ) ;                  // Search for separator
+  if ( inx >= 0 )                                    // Portnumber available?
   {
-    port = host.substring ( inx + 1 ).toInt() ;     // Get portnumber as integer
-    hostwoext = host.substring ( 0, inx ) ;         // Host without portnumber
+    port = hostwoext.substring ( inx + 1 ).toInt() ; // Get portnumber as integer
+    hostwoext = hostwoext.substring ( 0, inx ) ;     // Host without portnumber
   }
-  dbgprint ( "Connect to %s on port %d, extension %s",
-             hostwoext.c_str(), port, extension.c_str() ) ;
+  //dbgprint ( "Connect to %s on port %d, extension %s",
+  //           hostwoext.c_str(), port, extension.c_str() ) ;
   if ( mp3client->connect ( hostwoext.c_str(), port ) )
   {
-    if ( nvssearch ( "basicauth" ) )                // Does "basicauth" exists?
+    if ( nvssearch ( "basicauth" ) )                 // Does "basicauth" exists?
     {
-      auth = nvsgetstr ( "basicauth" ) ;            // Use basic authentication?
-      if ( auth != "" )                             // Should be user:passwd
+      auth = nvsgetstr ( "basicauth" ) ;             // Use basic authentication?
+      if ( auth != "" )                              // Should be user:passwd
       { 
-         auth = base64::encode ( auth.c_str() ) ;   // Encode
+         auth = base64::encode ( auth.c_str() ) ;    // Encode
          auth = String ( "Authorization: Basic " ) +
                 auth + String ( "\r\n" ) ;
       }
     }
-    while ( mp3client->disconnected() )             // Wait for connect
+    while ( mp3client->disconnected() )              // Wait for connect
     {
-      if ( retrycount++ > 50 )                      // For max 5 seconds
+      if ( retrycount++ > 50 )                       // For max 5 seconds
       {
-        mp3client->stop() ;                         // No connect, stop
-        break ;                                     //
+        mp3client->stop() ;                          // No connect, stop
+        break ;                                      //
       }
       vTaskDelay ( 100 / portTICK_PERIOD_MS ) ;
     }
@@ -1363,7 +1444,7 @@ bool connecttohost()
       sprintf ( getreq, "GET %s HTTP/1.0\r\n"
                         "Host: %s\r\n"
                         "Icy-MetaData: 1\r\n"
-                        "%s"                               // Auth
+                        "%s"                              // Auth
                         "Connection: close\r\n\r\n",
                 extension.c_str(),
                 hostwoext.c_str(),
@@ -1373,7 +1454,8 @@ bool connecttohost()
     }
     return true ;                                         // Send is probably okay
   }
-  dbgprint ( "Request %s failed!", host.c_str() ) ;
+  dbgprint ( "Request %s failed!",                        // Report error
+             presetinfo.host.c_str() ) ;
   return false ;
 }
 
@@ -1556,33 +1638,6 @@ String readhostfrompref ( int16_t preset )
   }
   // Get the contents
   return nvsgetstr ( tkey ) ;                          // Get the station (or empty sring)
-}
-
-
-//**************************************************************************************************
-//                                  R E A D H O S T F R O M P R E F                                *
-//**************************************************************************************************
-// Search for the next mp3 host in preferences specified newpreset.                                *
-// The host will be returned.  newpreset will be updated                                           *
-//**************************************************************************************************
-String readhostfrompref()
-{
-  String contents = "" ;                                // Result of search
-  int    maxtry = 0 ;                                   // Limit number of tries
-
-  while ( ( contents = readhostfrompref ( newpreset ) ) == "" )
-  {
-    if ( ++maxtry >= MAXPRESETS )
-    {
-      return "" ;
-    }
-    if ( ++newpreset >= MAXPRESETS )                    // Next or wrap to 0
-    {
-      newpreset = 0 ;
-    }
-  }
-  // Get the contents
-  return contents ;                                     // Return the station
 }
 
 
@@ -1776,6 +1831,7 @@ String readprefs ( bool output )
   char*       key ;                                         // Point to nvskeys[i]
   uint16_t    last2char = 0 ;                               // To detect paragraphs
  
+  presetinfo.highest_preset = 0 ;                           // Number of presets may be shorter
   for ( i = 0 ; i < MAXKEYS ; i++ )                         // Loop trough all available keys
   {
     key = nvskeys[i] ;                                      // Examine next key
@@ -2157,9 +2213,9 @@ void  mk_lsan()
 String getradiostatus()
 {
   return String ( "preset=" ) +                          // Add preset setting
-         String ( newpreset ) +
+         String ( presetinfo.host ) +
          String ( "\nvolume=" ) +                        // Add volume setting
-         String ( String ( ini_block.reqvol ) ) +
+         String ( ini_block.reqvol ) +
          String ( "\ntoneha=" ) +                        // Add tone setting HA
          String ( ini_block.rtone[0] ) +
          String ( "\ntonehf=" ) +                        // Add tone setting HF
@@ -2341,7 +2397,7 @@ void handleData ( void* arg, AsyncClient* client, void *data, size_t len )
   }
 }
 
-
+#ifdef TESTNETWORKEVENTS
 //**************************************************************************************************
 //                                  O N T I M E O U T                                              *
 //**************************************************************************************************
@@ -2371,7 +2427,7 @@ void onError ( void* arg, AsyncClient* client, err_t a )
 //**************************************************************************************************
 void onConnect ( void* arg, AsyncClient* client )
 {
-  dbgprint ( "Connected to MP3 host at %s on port %d",
+  dbgprint ( "Connected to host at %s on port %d",
              client->remoteIP().toString().c_str(),
              client->remotePort() ) ;
 }
@@ -2384,8 +2440,9 @@ void onConnect ( void* arg, AsyncClient* client )
 //**************************************************************************************************
 void onDisConnect ( void* arg, AsyncClient* client )
 {
-  dbgprint ( "MP3 host disconnected!" ) ;
+  dbgprint ( "Host disconnected" ) ;
 }
+#endif
 
 
 //**************************************************************************************************
@@ -2402,15 +2459,16 @@ void setup()
   char                       tmpstr[20] ;                // For version and Mac address
   esp_partition_iterator_t   pi ;                        // Iterator for find
   const esp_partition_t*     ps ;                        // Pointer to partition struct
-  
+
   maintask = xTaskGetCurrentTaskHandle() ;               // My taskhandle
   delay ( 3000 ) ;                                       // Wait for PlatformIO monitor to start
   Serial.begin ( 115200 ) ;                              // For debug
   Serial.println() ;
   // Print some memory and sketch info
-  dbgprint ( "Starting ESP32-radio running on CPU %d at %d MHz.  Version %s.  Free memory %d",
+  dbgprint ( "Starting ESP32-radio running on CPU %d at %d MHz.",
              xPortGetCoreID(),
-             ESP.getCpuFreqMHz(),
+             ESP.getCpuFreqMHz() ) ;
+  dbgprint ( "Version %s.  Free memory %d",
              VERSION,
              heapspace ) ;                               // Normally about 300 kB
   dbgprint ( "Display type is %s", DISPLAYTYPE ) ;       // Report display option
@@ -2561,10 +2619,10 @@ void setup()
                " mqtt and OTA" ) ;
     mp3client = new AsyncClient ;                        // Create client for Shoutcast connection
     mp3client->onData ( &handleData ) ;                  // Set callback on received mp3 data
-    mp3client->onConnect ( &onConnect ) ;                // Set callback on connect
-    mp3client->onDisconnect ( &onDisConnect ) ;          // Set callback on disconnect
-    mp3client->onError ( &onError ) ;                    // Set callback on error
-    mp3client->onTimeout ( &onTimeout ) ;                // Set callback on time-out
+    //mp3client->onConnect ( &onConnect ) ;              // Set callback on connect
+    //mp3client->onDisconnect ( &onDisConnect ) ;        // Set callback on disconnect
+    //mp3client->onError ( &onError ) ;                  // Set callback on error
+    //mp3client->onTimeout ( &onTimeout ) ;              // Set callback on time-out
     mqtt_on = ( ini_block.mqttbroker.length() > 0 ) &&   // Use MQTT if broker specified
               ( ini_block.mqttbroker != "none" ) ;
     otaInit() ;                                          // Int OTA handling (if enabled)
@@ -2667,6 +2725,7 @@ void setup()
     dsp_erase() ;                                         // Clear screen
   }
   tftset ( 0, NAME ) ;                                    // Set screen segment text top line
+  presetinfo.station_state = ST_PRESET ;                  // Start in preset mode
   if ( NetworkFound )                                     // Start with preset if network available
   {
     myQueueSend ( radioqueue, &startcmd ) ;               // Start player in radio mode
@@ -2893,8 +2952,8 @@ void handleSaveReq()
     return ;
   }
   savetime = millis() ;                                   // Set time of last save
-  nvssetstr ( "preset", String ( newpreset )  ) ;         // Save current preset
-  nvssetstr ( "volume", String ( ini_block.reqvol ) );    // Save current volue
+  nvssetstr ( "preset", String ( presetinfo.preset  ) ) ; // Save current preset
+  nvssetstr ( "volume", String ( ini_block.reqvol   ) ) ; // Save current volue
   nvssetstr ( "toneha", String ( ini_block.rtone[0] ) ) ; // Save current toneha
   nvssetstr ( "tonehf", String ( ini_block.rtone[1] ) ) ; // Save current tonehf
   nvssetstr ( "tonela", String ( ini_block.rtone[2] ) ) ; // Save current tonela
@@ -2950,7 +3009,7 @@ void handleVolPub()
 //**************************************************************************************************
 void chk_enc()
 {
-  static int8_t  enc_preset ;                                 // Selected preset
+  static int16_t enc_preset ;                                 // Selected preset
   String         tmp ;                                        // Temporary string
   int16_t        inx ;                                        // Position in string
 
@@ -2961,7 +3020,6 @@ void chk_enc()
       enc_inactivity = 0 ;
       enc_menu_mode = VOLUME ;                                // Return to VOLUME mode
       dbgprint ( "Encoder mode back to VOLUME" ) ;
-      tftset ( 2, (char*)NULL ) ;                             // Restore original text at bottom
     }
   }
   if ( singleclick || doubleclick ||                          // Any activity?
@@ -3001,7 +3059,9 @@ void chk_enc()
     dbgprint ( "Encoder mode set to PRESET" ) ;
     tftset ( 3, "Turn to select station\n"                    // Show current option
                 "Press to confirm" ) ;
-    enc_preset = newpreset + 1 ;                              // Start with current preset + 1
+    enc_preset = presetinfo.preset ;                          // Start with current preset
+    updateNr ( &enc_preset, presetinfo.highest_preset,        // plus 1
+               1, true ) ;
   }
   if ( singleclick )
   {
@@ -3012,7 +3072,7 @@ void chk_enc()
       case VOLUME :
         if ( muteflag )
         {
-          tftset ( 3, "" ) ;                                  // Clear text
+          tftset ( 2, icyname ) ;                             // Restore screen segment bottom part
         }
         else
         {
@@ -3022,16 +3082,16 @@ void chk_enc()
         dbgprint ( "Mute set to %d", muteflag ) ;
         break ;
       case PRESET :
-        newpreset = enc_preset ;                              // Make a definite choice
+        nextPreset ( enc_preset ) ;                           // Make a definite choice
         enc_menu_mode = VOLUME ;                              // Back to default mode
         myQueueSend ( radioqueue, &startcmd ) ;               // Signal radiofuncs()
-        tftset ( 3, "" ) ;                                    // Clear text
+        tftset ( 2, icyname ) ;                               // Restore screen segment bottom part
         break ;
     #ifdef SDCARD
       case TRACK :
         myQueueSend ( sdqueue, &startcmd ) ;                  // Signal SDfuncs()
         enc_menu_mode = VOLUME ;                              // Back to default mode
-        tftset ( 3, "" ) ;                                    // Clear text
+        tftset ( 2, icyname ) ;                               // Restore screen segment bottom part
         break ;
     #endif
       default :
@@ -3224,16 +3284,6 @@ void radiofuncs()
         {
           myQueueSend ( sdqueue, &stopcmd ) ;                     // Yes, send STOP to SD queue (First Out)
           sdfuncs() ;                                             // Allow sdfuncs to react
-        }
-        if ( newpreset >= 0 )                                     // Is negative for "station=xxxxx"
-        {
-          host = readhostfrompref ( newpreset ) ;                 // Get station belonging to preset
-          dbgprint ( "Host selected is %d:%s",                    // Show result
-                     newpreset, host.c_str() ) ;
-        }
-        else
-        {
-          newpreset = oldpreset ;                                 // Do not leave preset negative
         }
         connecttohost() ;                                         // Connect to stream host
         connected = true ;                                        // Remember connection state
@@ -3475,22 +3525,22 @@ void handlebyte_ch ( uint8_t b )
         lcml.toLowerCase() ;
         if ( lcml.startsWith ( "location: " ) )        // Redirection?
         {
-          redirection = true ;
-          if ( lcml.indexOf ( "http://" ) > 8 )        // Redirection with http://?
+          metaline = metaline.substring ( 10 ) ;       // Yes, get new URL
+          int hp = metaline.indexOf ( "://" ) ;        // Redirection with "http(s)://" ?
+          if ( hp > 0 )
           {
-            host = metaline.substring ( 17 ) ;         // Yes, get new URL
+            metaline = metaline.substring ( hp + 3 ) ; // Yes, get new URL
           }
-          else if ( lcml.indexOf ( "https://" ) )      // Redirection with https://?
-          {
-            host = metaline.substring ( 18 ) ;         // Yes, get new URL
-          }
+          presetinfo.station_state = ST_REDIRECT ;     // Set host already filled
+          presetinfo.host= metaline ;
+          redirection = true ;                         // Remember redirection
         }
-        if ( lcml.indexOf ( "content-type" ) == 0)     // Line with "Content-Type: xxxx/yyy"
+        if ( lcml.startsWith ( "content-type" ) )      // Line with "Content-Type: xxxx/yyy"
         {
           ctseen = true ;                              // Yes, remember seeing this
           audio_ct = metaline.substring ( 13 ) ;       // Set contentstype
           audio_ct.trim() ;
-          dbgprint ( "%s seen.", audio_ct.c_str() ) ;  // Like "audio/mpeg"
+          //dbgprint ( "%s seen", audio_ct.c_str() ) ; // Like "audio/mpeg"
         }
         if ( lcml.startsWith ( "icy-br:" ) )
         {
@@ -3525,7 +3575,13 @@ void handlebyte_ch ( uint8_t b )
       metalinebfx = 0 ;                                // Reset this line
       if ( LFcount == 2 )                              // Double LF marks end of header?
       {
-        if ( ctseen )                                  // Content type seen?
+        if ( redirection )                             // Redirection?
+        {
+          dbgprint ( "Redirect" ) ;                    // Yes, show
+          setdatamode ( INIT ) ;                       // Mode to INIT again
+          myQueueSend ( radioqueue, &startcmd ) ;      // Restart with new found host
+        }
+        else if ( ctseen )                             // Content type seen?
         {
           dbgprint ( "Switch to DATA, bitrate is %d"   // Show bitrate
                     ", metaint is %d",                 // and metaint
@@ -3533,13 +3589,6 @@ void handlebyte_ch ( uint8_t b )
           setdatamode ( DATA ) ;                       // Expecting data now
           datacount = metaint ;                        // Number of bytes before first metadata
           queueToPt ( QSTARTSONG ) ;                   // Queue a request to start song
-        }
-        if ( redirection )                             // Redirection?
-        {
-          setdatamode ( INIT ) ;                       // Yes, mode to INIT again
-          oldpreset = newpreset ;                      // Remember current preset
-          newpreset = -1 ;                             // Mark host already set
-          myQueueSend ( radioqueue, &startcmd ) ;      // Restart with new found host
         }
       }
     }
@@ -3600,7 +3649,7 @@ void handlebyte_ch ( uint8_t b )
     metalinebfx = 0 ;                                  // Prepare for new line
     LFcount = 0 ;                                      // For detection end of header
     setdatamode ( PLAYLISTHEADER ) ;                   // Handle playlist header
-    playlistcnt = 1 ;                                  // Reset for compare
+    playlistcnt = 0 ;                                  // Reset for compare
     totalcount = 0 ;                                   // Reset totalcount
     clength = 0xFFFFFFFF ;                             // Content-length unknown
     dbgprint ( "Read from playlist" ) ;
@@ -3625,7 +3674,7 @@ void handlebyte_ch ( uint8_t b )
       {
         dbgprint ( "Switch to PLAYLISTDATA, "          // For debug
                    "search for entry %d",
-                   playlist_num ) ;
+                   presetinfo.playlistnr ) ;
         setdatamode ( PLAYLISTDATA ) ;                 // Expecting data now
         mqttpub.trigger ( MQTT_PLAYLISTPOS ) ;         // Playlistposition to MQTT
         return ;
@@ -3658,12 +3707,12 @@ void handlebyte_ch ( uint8_t b )
         metalinebfx-- ;
       }
     }
-    if ( ( b == '\n' ) ||                              // linefeed ?
+    if ( ( b == '\n' ) ||                              // linefeed?
          ( clength == 0 ) )                            // Or end of playlist data contents
     {
       int inx ;                                        // Pointer in metaline
       metalinebf[metalinebfx] = '\0' ;                 // Take care of delimeter
-      dbgprint ( "Playlistdata: %s",                   // Show playlistheader
+      dbgprint ( "Playlistdata: %s",                   // Show playlist data
                  metalinebf ) ;
       if ( strlen ( metalinebf ) < 5 )                 // Skip short lines
       {
@@ -3674,7 +3723,7 @@ void handlebyte_ch ( uint8_t b )
       String metaline = String ( metalinebf ) ;        // Convert to string
       if ( metaline.indexOf ( "#EXTINF:" ) >= 0 )      // Info?
       {
-        if ( playlist_num == playlistcnt )             // Info for this entry?
+        if ( presetinfo.playlistnr == playlistcnt )    // Info for this entry?
         {
           inx = metaline.indexOf ( "," ) ;             // Comma in this line?
           if ( inx > 0 )
@@ -3690,22 +3739,19 @@ void handlebyte_ch ( uint8_t b )
         metalinebfx = 0 ;                              // Yes, ignore
         return ;                                       // Ignore commentlines
       }
-      // Now we have an URL for a .mp3 file or stream.  Is it the rigth one?
+      // Now we have an URL for a .mp3 file or stream.
+      presetinfo.highest_playlistnr = playlistcnt ;
       dbgprint ( "Entry %d in playlist found: %s", playlistcnt, metalinebf ) ;
-      if ( playlist_num == playlistcnt  )
+      if ( presetinfo.playlistnr == playlistcnt )      // Is it the right one?
       {
-        inx = metaline.indexOf ( "http://" ) ;         // Search for "http://"
+        inx = metaline.indexOf ( "://" ) ;             // Search for "http(s)://"
         if ( inx >= 0 )                                // Does URL contain "http://"?
         {
-          host = metaline.substring ( inx + 7 ) ;      // Yes, remove it and set host
+          metaline = metaline.substring ( inx + 3 ) ;  // Yes, remove it
         }
-        else
-        {
-          host = metaline ;                            // Yes, set new host
-        }
+        presetinfo.host = metaline ;                   // Set host
+        presetinfo.station_state = ST_PLAYLIST ;       // Set playlist mode
         setdatamode ( INIT ) ;                         // Yes, mode to INIT again
-        oldpreset = newpreset ;                        // Remember current preset
-        newpreset = -1 ;                               // Mark host already set
         myQueueSend ( radioqueue, &startcmd ) ;        // Restart with new found host
       }
       metalinebfx = 0 ;                                // Prepare for next line
@@ -3941,23 +3987,19 @@ const char* analyzeCmd ( const char* par, const char* val )
   { // Do not handle here
   }
   else if ( argument.startsWith ( "preset_" ) )       // Enumerated preset?
-  { // Do not handle here
+  {
+    ivalue = argument.substring ( 7 ).toInt() ;       // Only look for max
+    if ( ivalue > presetinfo.highest_preset )         
+    {
+      presetinfo.highest_preset = ivalue ;            // Found new max
+    }
   }
   else if ( argument == "preset" )                    // (UP/DOWN)Preset station?
   {
-    if ( relative )                                   // Relative argument?
-    {
-      newpreset += ivalue ;                           // Yes, adjust preset
-    }
-    else
-    {
-      newpreset = ivalue ;                            // Otherwise set station
-      playlist_num = 0 ;                              // Absolute, reset playlist
-    }
-    host = readhostfrompref ( newpreset ) ;           // Set new host
-    myQueueSend ( radioqueue, &startcmd ) ;           // Signal radiofuncs()
+    nextPreset ( ivalue, relative ) ;                 // Yes, set new preset
     sprintf ( reply, "Preset is now %d",              // Reply new preset
-              newpreset ) ;
+              presetinfo.preset ) ;
+    myQueueSend ( radioqueue, &startcmd ) ;           // Signal radiofuncs()
   }
 #ifdef SDCARD
   else if ( argument == "track" )                     // MP3 track request?
@@ -3973,12 +4015,12 @@ const char* analyzeCmd ( const char* par, const char* val )
   else if ( ( value.length() > 0 ) &&
             ( argument == "station" ) )               // Station in the form address:port
   {
-    host = value ;                                    // Save it for storage and selection later
-    newpreset = -1 ;                                  // Means: host alredy set
+    presetinfo.host = value ;                         // Save it for storage and selection later
+    presetinfo.station_state = ST_STATION ;           // Set station mode
     myQueueSend ( radioqueue, &startcmd ) ;           // Signal radiofuncs()
     sprintf ( reply,
               "Select %s",                            // Format reply
-              host.c_str() ) ;
+              value.c_str() ) ;
     utf8ascii_ip ( reply ) ;                          // Remove possible strange characters
   }
   else if ( argument == "status" )                    // Status request
