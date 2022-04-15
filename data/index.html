@@ -150,6 +150,7 @@
       if ( xhr.readyState == XMLHttpRequest.DONE )
       {
         resultstr.value = xhr.responseText ;
+        preset.selectedIndex = 0 ;
       }
     }
     xhr.open ( "GET", theUrl ) ;
