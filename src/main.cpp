@@ -81,16 +81,27 @@
 // 13-04-2022, ES: Fixed redirect bug (preset was reset), fixed playlist.
 // 14-04-2022, ES: Added posibility for a fixed WiFi network.
 // 15-04-2022, ES: Redesigned station selection.
+// 25-04-2022, ES: Support foe WT32-ETH01 (wired Ethernet).
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Fri, 15 Apr 2022 11:30:00 GMT"
+#define VERSION     "Mon, 25 Apr 2022 14:35:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
+#include <WiFi.h>
 #include "../include/config.h"                            // Specify display type, decoder type
 #include <nvs.h>                                          // Access to NVS
 #include <PubSubClient.h>                                 // MTTQ access
-#include <WiFiMulti.h>                                    // Handle multiple WiFi networks
+#ifdef ETHERNET
+  // Definitions for Ethernet controller
+  #include <ETH.h>
+  #define ETH_CLK_MODE    ETH_CLOCK_GPIO0_IN              // External clock from crystal oscillator
+  #define ETH_TYPE        ETH_PHY_LAN8720                 // Type of controller
+  #define ETH_ADDR        1                               // I2C address of Ethernet PHY
+#else
+  #include <WiFiMulti.h>                                  // Handle multiple WiFi networks
+  WiFiMulti wifiMulti ;                                   // Object for WiFiMulti
+#endif
 #include <ESPmDNS.h>                                      // For multicast DNS
 #include <time.h>                                         // Time functions
 #include <SPI.h>                                          // For SPI handling
@@ -219,6 +230,9 @@ struct ini_struct
   int8_t         i2s_bck_pin ;                        // GPIO Pin number for I2S "BCK"
   int8_t         i2s_lck_pin ;                        // GPIO Pin number for I2S "L(R)CK"
   int8_t         i2s_din_pin ;                        // GPIO Pin number for I2S "DIN"
+  int8_t         eth_mdc_pin ;                        // GPIO Pin number for Ethernet controller MDC
+  int8_t         eth_mdio_pin ;                       // GPIO Pin number for Ethernet controller MDIO
+  int8_t         eth_power_pin ;                      // GPIO Pin number for Ethernet controller POWER
   uint16_t       bat0 ;                               // ADC value for 0 percent battery charge
   uint16_t       bat100 ;                             // ADC value for 100 percent battery charge
 } ;
@@ -287,7 +301,6 @@ enum datamode_t { INIT = 0x1, HEADER = 0x2, DATA = 0x4,      // State for datast
 
 // Global variables
 int               numSsid ;                              // Number of available WiFi networks
-WiFiMulti         wifiMulti ;                            // Possible WiFi networks
 bool              ota = false ;                          // Allow OTA updates
 preset_info_t     presetinfo ;                           // Info about the current or new station
 ini_struct        ini_block ;                            // Holds configurable data
@@ -303,9 +316,9 @@ char              timetxt[9] ;                           // Converted timeinfo
 char              cmd[130] ;                             // Command from MQTT or Serial
 const qdata_type  stopcmd = QSTOPSONG ;                  // Command for radio/SD
 const qdata_type  startcmd = QSTARTSONG ;                // Command for radio/SD
-QueueHandle_t     radioqueue = NULL ;                    // Queue for icecast commands
-QueueHandle_t     dataqueue = NULL ;                     // Queue for mp3 datastream
-QueueHandle_t     sdqueue = NULL ;                       // For commands to sdfuncs
+QueueHandle_t     radioqueue = 0 ;                       // Queue for icecast commands
+QueueHandle_t     dataqueue = 0 ;                        // Queue for mp3 datastream
+QueueHandle_t     sdqueue = 0 ;                          // For commands to sdfuncs
 qdata_struct      outchunk ;                             // Data to queue
 qdata_struct      inchunk ;                              // Data from queue
 uint8_t*          outqp = outchunk.buf ;                 // Pointer to buffer in outchunk
@@ -322,15 +335,15 @@ String            ipaddress ;                            // Own IP-address
 int               bitrate ;                              // Bitrate in kb/sec
 int               mbitrate ;                             // Measured bitrate
 int               metaint = 0 ;                          // Number of databytes between metadata
-bool              internal_dac ;                         // True if internal DAC used
 bool              reqtone = false ;                      // New tone setting requested
 bool              muteflag = false ;                     // Mute output
 bool              resetreq = false ;                     // Request to reset the ESP32
 bool              updatereq = false ;                    // Request to update software from remote host
 bool              testreq = false ;                      // Request to print test info
+bool              eth_connected = false ;                // Ethernet connected or not
 bool              NetworkFound = false ;                 // True if WiFi network connected
 bool              mqtt_on = false ;                      // MQTT in use
-String            networks ;                             // Found networks in the surrounding
+String            networks = "None|" ;                   // Found networks in the surrounding
 uint16_t          mqttcount = 0 ;                        // Counter MAXMQTTCONNECTS
 int8_t            playingstat = 0 ;                      // 1 if radio is playing (for MQTT)
 int16_t           playlist_num = 0 ;                     // Nonzero for selection from playlist
@@ -852,6 +865,7 @@ void tftset ( uint16_t inx, String& str )
 }
 
 
+#ifndef ETHERNET
 //**************************************************************************************************
 //                                        L I S T N E T W O R K S                                  *
 //**************************************************************************************************
@@ -869,6 +883,7 @@ void listNetworks()
   dbgprint ( "Scan Networks" ) ;                         // Scan for nearby networks
   numSsid = WiFi.scanNetworks() ;
   dbgprint ( "Scan completed" ) ;
+  networks = String ( "" ) ;
   if ( numSsid <= 0 )
   {
     dbgprint ( "Couldn't get a wifi connection" ) ;
@@ -900,6 +915,7 @@ void listNetworks()
   }
   dbgprint ( "End of list" ) ;
 }
+#endif
 
 
 //**************************************************************************************************
@@ -944,6 +960,7 @@ bool updateNr ( int16_t* pnr, int16_t maxnr, int16_t nr, bool relative )
 //**************************************************************************************************
 void nextPreset ( int16_t pnr, bool relative = false )
 {
+  //dbgprint ( "nextpreset called with pnr = %d", pnr ) ;
   if ( ( presetinfo.station_state == ST_STATION ) ||           // In station mode?
        ( presetinfo.station_state == ST_REDIRECT ) )           // or redirect mode?
   {
@@ -964,8 +981,8 @@ void nextPreset ( int16_t pnr, bool relative = false )
                presetinfo.highest_preset,
                pnr, relative ) ;
     presetinfo.host = readhostfrompref ( presetinfo.preset ) ; // Set host
-    dbgprint ( "nextPreset is %d, host %s",
-               presetinfo.preset, presetinfo.host.c_str() ) ;
+    dbgprint ( "nextPreset is %d",
+               presetinfo.preset ) ;
   }
 }
 
@@ -1478,7 +1495,95 @@ uint32_t ssconv ( const uint8_t* bytes )
   return res ;                                            // Return the result
 }
 
+#ifdef ETHERNET
+//**************************************************************************************************
+//                                      E T H E V E N T                                            *
+//**************************************************************************************************
+// Will be executed on ethernet driver events.                                                     *
+//**************************************************************************************************
+void EthEvent ( WiFiEvent_t event )
+{
+  const char* fd = "" ;                               // Full duplex or not as a string
 
+  switch ( event )                                    // What event?
+  {
+    case SYSTEM_EVENT_ETH_START :
+    case 18 :
+      dbgprint ( "ETH Started" ) ;                    // Driver started
+      ETH.setHostname ( NAME ) ;                      // Set the eth hostname now
+      break ;
+    case SYSTEM_EVENT_ETH_CONNECTED :
+    case 20 :
+      dbgprint ( "ETH cable connected" ) ;            // We have a connection
+      break ;
+    case SYSTEM_EVENT_ETH_GOT_IP :
+    case 22 :
+      if ( ETH.fullDuplex() )                         // IP received from DHCP
+      {
+        fd = ", FULL_DUPLEX" ;                        // It is full duplex
+      }
+      ipaddress = ETH.localIP().toString() ;          // Remember for display
+      dbgprint ( "IPv4: %s, %d Mbps%s",               // Show status
+                 ipaddress.c_str(),
+                 ETH.linkSpeed(),
+                 fd ) ;
+      eth_connected = true ;                          // Set global flag: connection OK
+      break ;
+    case SYSTEM_EVENT_ETH_DISCONNECTED :
+    case 21 :
+      dbgprint ( "ETH cable disconnected" ) ;         // We have a disconnection
+      eth_connected = false ;                         // Clear the global flag
+      break ;
+    case SYSTEM_EVENT_ETH_STOP :
+    case 19 :
+      dbgprint ( "ETH Stopped" ) ;
+      eth_connected = false ;
+      break ;
+    default :
+      dbgprint ( "ETH event %d", (int)event ) ;       // Unknown event
+      break ;
+  }
+}
+
+//**************************************************************************************************
+//                                       C O N N E C T E T H                                       *
+//**************************************************************************************************
+// Connect to Ethernet.                                                                            *
+// If connection fails, the function returns false.                                                *
+//**************************************************************************************************
+bool connectETH()
+{
+  const char* pIP ;                                     // Pointer to IP address
+  bool        res ;                                     // Result of connect
+  int         tries = 0 ;                               // Counter for wait time
+  
+  dbgprint ( "ETH pins %d, %d and %d",
+             ini_block.eth_power_pin,
+             ini_block.eth_mdc_pin,
+             ini_block.eth_mdio_pin ) ;
+  res =  ETH.begin ( ETH_ADDR, ini_block.eth_power_pin, // Start Ethernet driver
+                     ini_block.eth_mdc_pin,
+                     ini_block.eth_mdio_pin,
+                     ETH_TYPE, ETH_CLK_MODE ) ;
+  while ( res & ( ! eth_connected ) )                   // Wait for connect
+  {
+    delay ( 1000 ) ;
+    if ( tries++ == 10 )                                // Limit wait time
+    {
+      res = false ;                                     // No luck
+    }
+  }
+  pIP = ipaddress.c_str() ;                             // As c-string
+  dbgprint ( "IP = %s", pIP ) ;
+  tftlog ( "IP = " ) ;                                  // Show IP
+  tftlog ( pIP, true ) ;
+  #ifdef NEXTION
+    dsp_println ( "\f" ) ;                              // Select new page if NEXTION 
+  #endif
+  return res ;                                          // Return result of connection
+}
+
+#else
 //**************************************************************************************************
 //                                       C O N N E C T W I F I                                     *
 //**************************************************************************************************
@@ -1490,7 +1595,7 @@ uint32_t ssconv ( const uint8_t* bytes )
 bool connectwifi()
 {
   bool        localAP = false ;                         // True if only local AP is left
-  const char* pIP ;                                     // poiter to IP address
+  const char* pIP ;                                     // Pointer to IP address
   WifiInfo_t  winfo ;                                   // Entry from wifilist
 
   WiFi.disconnect ( true ) ;                            // After restart the router could
@@ -1546,12 +1651,13 @@ bool connectwifi()
   #endif
   return ( localAP == false ) ;                         // Return result of connection
 }
+#endif
 
 
 //**************************************************************************************************
 //                                           O T A S T A R T                                       *
 //**************************************************************************************************
-// Update via WiFi has been started by Arduino IDE.                                                *
+// Update via WiFi/Ethernet has been started by Arduino IDE.                                       *
 //**************************************************************************************************
 void otastart()
 {
@@ -1776,9 +1882,18 @@ void readIOprefs()
     { "pin_i2s_bck",   &ini_block.i2s_bck_pin,      -1 }, // I2S interface pins
     { "pin_i2s_lck",   &ini_block.i2s_lck_pin,      -1 },
     { "pin_i2s_din",   &ini_block.i2s_din_pin,      -1 },
+  #ifdef ETHERNET
+    { "pin_spi_sck",   &ini_block.spi_sck_pin,      -1 },
+    { "pin_spi_miso",  &ini_block.spi_miso_pin,     -1 },
+    { "pin_spi_mosi",  &ini_block.spi_mosi_pin,     -1 },
+    { "pin_eth_mdc",   &ini_block.eth_mdc_pin,      23 },
+    { "pin_eth_mdio",  &ini_block.eth_mdio_pin,     18 },
+    { "pin_eth_power", &ini_block.eth_power_pin,    16 },
+  #else
     { "pin_spi_sck",   &ini_block.spi_sck_pin,      18 },
     { "pin_spi_miso",  &ini_block.spi_miso_pin,     19 },
     { "pin_spi_mosi",  &ini_block.spi_mosi_pin,     23 },
+  #endif
     { NULL,            NULL,                        0  }  // End of list
   } ;
   int         i ;                                         // Loop control
@@ -1830,6 +1945,7 @@ String readprefs ( bool output )
   String      outstr = "" ;                                 // Outputstring
   char*       key ;                                         // Point to nvskeys[i]
   uint16_t    last2char = 0 ;                               // To detect paragraphs
+  int         presetnr ;                                    // Preset number
  
   presetinfo.highest_preset = 0 ;                           // Number of presets may be shorter
   for ( i = 0 ; i < MAXKEYS ; i++ )                         // Loop trough all available keys
@@ -1841,6 +1957,14 @@ String readprefs ( bool output )
     cmd = String ( key ) +                                  // Yes, form command
           String ( " = " ) +
           val ;
+    if ( cmd.startsWith ( "preset_") )                      // Preset definition?
+    {
+      presetnr = atoi ( key + 7 ) ;                         // Yes, get preset number
+      if ( presetnr > presetinfo.highest_preset )         
+      {
+        presetinfo.highest_preset = presetnr ;              // Found new max
+      }
+    }
     if ( output )
     {
       if ( ( i > 0 ) &&
@@ -2149,6 +2273,7 @@ void scanIR()
 }
 
 
+#ifndef ETHERNET
 //**************************************************************************************************
 //                                           M K _ L S A N                                         *
 //**************************************************************************************************
@@ -2202,7 +2327,7 @@ void  mk_lsan()
     }
   }
 }
-
+#endif
 
 //**************************************************************************************************
 //                                     G E T R A D I O S T A T U S                                 *
@@ -2530,10 +2655,6 @@ void setup()
                                                          // Rotary encoder
   for ( i = 0 ; (pinnr = progpin[i].gpio) >= 0 ; i++ )   // Check programmable input pins
   {
-    //if ( pinnr == 25 || pinnr == 26 )
-    //{
-    //  continue ;
-    //}
     pinMode ( pinnr, INPUT_PULLUP ) ;                    // Input for control button
     delay ( 10 ) ;
     // Check if pull-up active
@@ -2548,9 +2669,12 @@ void setup()
     dbgprint ( "GPIO%d is %s", pinnr, p ) ;
   }
   readprogbuttons() ;                                    // Program the free input pins
-  SPI.begin ( ini_block.spi_sck_pin,                     // Init VSPI bus with default or modified pins
-              ini_block.spi_miso_pin,
-              ini_block.spi_mosi_pin ) ;
+  if ( ini_block.spi_sck_pin >= 0 )
+  {
+    SPI.begin ( ini_block.spi_sck_pin,                   // Init VSPI bus with default or modified pins
+                ini_block.spi_miso_pin,
+                ini_block.spi_mosi_pin ) ;
+  }
   if ( ini_block.ir_pin >= 0 )
   {
     dbgprint ( "Enable pin %d for IR",
@@ -2559,7 +2683,7 @@ void setup()
     attachInterrupt ( ini_block.ir_pin,                  // Interrupts will be handle by isr_IR
                       isr_IR, CHANGE ) ;
   }
-  dbgprint ( "Start display" ) ;
+  dbgprint ( "Start %s display", DISPLAYTYPE ) ;
   dsp_ok = dsp_begin ( INIPARS ) ;                       // Init display
   if ( dsp_ok )                                          // Init okay?
   {
@@ -2583,29 +2707,49 @@ void setup()
     pinMode ( ini_block.tft_blx_pin, OUTPUT ) ;          // Yes, enable output
   }
   blset ( true ) ;                                       // Enable backlight (if configured)
-  mk_lsan() ;                                            // Make a list of acceptable networks
+  #ifndef ETHERNET
+    mk_lsan() ;                                          // Make a list of acceptable networks
                                                          // in preferences.
-  WiFi.disconnect() ;                                    // After restart router could still
-  delay ( 500 ) ;                                        // keep old connection
-  WiFi.mode ( WIFI_STA ) ;                               // This ESP is a station
-  delay ( 500 ) ;                                        // ??
-  WiFi.persistent ( false ) ;                            // Do not save SSID and password
-  listNetworks() ;                                       // Find WiFi networks
+    WiFi.disconnect() ;                                  // After restart router could still
+    delay ( 500 ) ;                                      // keep old connection
+    WiFi.mode ( WIFI_STA ) ;                             // This ESP is a station
+    delay ( 500 ) ;                                      // ??
+    WiFi.persistent ( false ) ;                          // Do not save SSID and password
+    listNetworks() ;                                     // Find WiFi networks
+  #endif
   readprefs ( false ) ;                                  // Read preferences
-  tcpip_adapter_set_hostname ( TCPIP_ADAPTER_IF_STA,
-                               NAME ) ;
-  #if defined(DEC_VS1053) || defined(DEC_VS1003)
+  radioqueue = xQueueCreate ( 10,                        // Create small queue for communication to radiofuncs
+                             sizeof ( qdata_type ) ) ;
+  dataqueue = xQueueCreate ( QSIZ,                       // Create queue for communication
+                             sizeof ( qdata_struct ) ) ;
+#if defined(DEC_VS1053) || defined(DEC_VS1003)
     VS1053_begin ( ini_block.vs_cs_pin,                  // Make instance of player and initialize
                    ini_block.vs_dcs_pin,
                    ini_block.vs_dreq_pin,
                    ini_block.shutdown_pin,
                    ini_block.shutdownx_pin ) ;
   #endif
-  p = "Connect to WiFi" ;                                // Show progress
+  xTaskCreatePinnedToCore (
+    playtask,                                            // Task to play data in dataqueue.
+    "Playtask",                                          // Name of task.
+    2500,                                                // Stack size of task
+    NULL,                                                // parameter of the task
+    2,                                                   // priority of the task
+    &xplaytask,                                          // Task handle to keep track of created task
+    0 ) ;                                                // Run on CPU 0
+  delay ( 100 ) ;                                        // Allow playtask to start
+  p = "Connect to network" ;                             // Show progress
   dbgprint ( p ) ;
-  tftlog ( p, true ) ;                                         // On TFT too
-  NetworkFound = connectwifi() ;                         // Connect to WiFi network
-  dbgprint ( "Start server for commands" ) ;
+  tftlog ( p, true ) ;                                   // On TFT too
+  #ifdef ETHERNET
+    WiFi.onEvent ( EthEvent ) ;                             // Set actions on ETH events
+    NetworkFound = connectETH() ;                        // Connect to Ethernet
+  #else
+    NetworkFound = connectwifi() ;                       // Connect to WiFi network
+  #endif
+  tcpip_adapter_set_hostname ( TCPIP_ADAPTER_IF_STA,
+                               NAME ) ;
+  dbgprint ( "Start web server" ) ;
   cmdserver.on ( "/getprefs",  handle_getprefs ) ;       // Handle get preferences
   cmdserver.on ( "/saveprefs", handle_saveprefs ) ;      // Handle save preferences
   cmdserver.on ( "/getdefs",   handle_getdefs ) ;        // Handle get default config
@@ -2653,7 +2797,7 @@ void setup()
     }
   }
   timer = timerBegin ( 0, 80, true ) ;                   // User 1st timer with prescaler 80
-  timerAttachInterrupt ( timer, &timer100, true ) ;      // Call timer100() on timer alarm
+  timerAttachInterrupt ( timer, &timer100, false ) ;     // Call timer100() on timer alarm
   timerAlarmWrite ( timer, 100000, true ) ;              // Alarm every 100 msec
   timerAlarmEnable ( timer ) ;                           // Enable the timer
   delay ( 1000 ) ;                                       // Show IP for a while
@@ -2693,31 +2837,19 @@ void setup()
                 ini_block.enc_sw_pin ) ;
     }
   #endif
-  if ( NetworkFound )
+if ( NetworkFound )
   {
     gettime() ;                                           // Sync time
   }
   outchunk.datatyp = QDATA ;                              // This chunk dedicated to QDATA
   adc1_config_width ( ADC_WIDTH_12Bit ) ;
   adc1_config_channel_atten ( ADC1_CHANNEL_0, ADC_ATTEN_0db ) ;
-  radioqueue = xQueueCreate ( 10,                         // Create small queue for communication to radiofuncs
-                             sizeof ( qdata_type ) ) ;
-  dataqueue = xQueueCreate ( QSIZ,                        // Create queue for communication
-                             sizeof ( qdata_struct ) ) ;
 #ifdef SDCARD
   sdqueue = xQueueCreate ( 10,                            // Create small queue for communication to sdfuncs
                             sizeof ( qdata_type ) ) ;
   tftlog ( "Mount&scan SD card", true ) ;
   sdfuncs() ;                                             // Mount and scan SD card
 #endif
-  xTaskCreatePinnedToCore (
-    playtask,                                             // Task to play data in dataqueue.
-    "Playtask",                                           // Name of task.
-    2500,                                                 // Stack size of task
-    NULL,                                                 // parameter of the task
-    2,                                                    // priority of the task
-    &xplaytask,                                           // Task handle to keep track of created task
-    0 ) ;                                                 // Run on CPU 0
   singleclick = false ;                                   // Might be fantom click
   if ( dsp_ok )                                           // Is display okay?
   {
@@ -2731,7 +2863,6 @@ void setup()
     myQueueSend ( radioqueue, &startcmd ) ;               // Start player in radio mode
   }
 }
-
 
 //**************************************************************************************************
 //                                        W R I T E P R E F S                                      *
@@ -3922,7 +4053,6 @@ const char* analyzeCmd ( const char* par, const char* val )
   String             tmpstr ;                         // Temporary storage of a string
   int                ivalue ;                         // Value of argument as an integer
   static char        reply[180] ;                     // Reply to client, will be returned
-  uint8_t            oldvol ;                         // Current volume
   bool               relative = false ;               // Relative argument (+ or -)
 
   blset ( true ) ;                                    // Enable backlight of TFT
@@ -3958,10 +4088,10 @@ const char* analyzeCmd ( const char* par, const char* val )
   else if ( argument == "volume" )                    // Volume setting?
   {
     // Volume may be of the form "upvolume", "downvolume" or "volume" for relative or absolute setting
-    oldvol = player_getVolume() ;                     // Get current volume
     if ( relative )                                   // + relative setting?
     {
-      ini_block.reqvol = oldvol + ivalue ;            // Up/down by 0.5 or more dB
+      ini_block.reqvol = player_getVolume() +         // Up/down by 0.5 or more dB
+                         ivalue ;
     }
     else
     {
@@ -3989,16 +4119,13 @@ const char* analyzeCmd ( const char* par, const char* val )
   else if ( argument.startsWith ( "preset_" ) )       // Enumerated preset?
   {
     ivalue = argument.substring ( 7 ).toInt() ;       // Only look for max
-    if ( ivalue > presetinfo.highest_preset )         
-    {
-      presetinfo.highest_preset = ivalue ;            // Found new max
-    }
   }
   else if ( argument == "preset" )                    // (UP/DOWN)Preset station?
   {
     nextPreset ( ivalue, relative ) ;                 // Yes, set new preset
     sprintf ( reply, "Preset is now %d",              // Reply new preset
               presetinfo.preset ) ;
+    if ( NetworkFound )
     myQueueSend ( radioqueue, &startcmd ) ;           // Signal radiofuncs()
   }
 #ifdef SDCARD
@@ -4306,7 +4433,7 @@ void playtask ( void * parameter )
 //**************************************************************************************************
 void playtask ( void * parameter )
 {
-  esp_err_t      pinss_err ;                                        // Result of i2s_set_pin
+  esp_err_t      pinss_err = ESP_FAIL ;                             // Result of i2s_set_pin
   i2s_port_t     i2s_num = I2S_NUM_0 ;                              // i2S port number
   i2s_config_t   i2s_config =
   {
@@ -4316,7 +4443,7 @@ void playtask ( void * parameter )
      .bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT,
      .channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT,
      //.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
-     .communication_format = I2S_COMM_FORMAT_I2S,
+     .communication_format = I2S_COMM_FORMAT_STAND_I2S,
      .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,                  // High interrupt priority
      .dma_buf_count        = 8,
      .dma_buf_len          = 256,
@@ -4332,43 +4459,45 @@ void playtask ( void * parameter )
       .data_in_num           = -1                                   // No input
   } ;
 
-  vTaskDelay ( 3000 / portTICK_PERIOD_MS ) ;                        // Start delay
-  internal_dac = ( ini_block.i2s_bck_pin < 0 ) ;                    // Use internal DAC if BCK not configured
   dbgprint ( "Starting I2S playtask.." ) ;
   MP3Decoder_AllocateBuffers() ;                                    // Init HELIX buffers
   AACDecoder_AllocateBuffers() ;                                    // Init HELIX buffers
-  if ( internal_dac )                                               // Use internal (8 bit) DAC?
-  {
+  #ifdef DEC_HELIX_INT                                              // Use internal (8 bit) DAC?
     i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER |                // Yes, set I2S mode
                                    I2S_MODE_TX |
                                    I2S_MODE_DAC_BUILT_IN ) ;        // Enable internal DAC
-    i2s_config.communication_format = I2S_COMM_FORMAT_I2S_MSB ;     // Only use MSB part
-  }
+    i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2S ;   // Only use MSB part
+  #endif
   if ( i2s_driver_install ( i2s_num, &i2s_config, 0, NULL ) != ESP_OK )
   {
     dbgprint ( "I2S install error!" ) ;
   }
-  if ( internal_dac )                                               // Use internal (8 bit) DAC?
+  #ifdef DEC_HELIX_INT                                             // Use internal (8 bit) DAC?
+    dbgprint ( "Output to internal DAC" ) ;                        // Show output device
+    pinss_err = i2s_set_pin ( i2s_num, NULL ) ;                    // Yes, default pins for internal DAC
+  #else
+    dbgprint ( "Output to I2S, pins %d, %d and %d",                // Show pins used for output device
+               pin_config.bck_io_num,                              // This is the BCK (bit clock) pin
+               pin_config.ws_io_num,                               // This is L(R)CK pin
+               pin_config.data_out_num ) ;                         // This is DATA output pin
+    if ( ( ini_block.i2s_bck_pin + 
+           ini_block.i2s_lck_pin +
+           ini_block.i2s_din_pin ) > 2 )                           // Check for legal pins
+    {
+      pinss_err = i2s_set_pin ( i2s_num, &pin_config ) ;           // Set I2S pins
+    }
+  #endif
+  if ( pinss_err != ESP_OK )                                       // Check error condition
   {
-    dbgprint ( "Output to internal DAC" ) ;                         // Show output device
-    pinss_err = i2s_set_pin ( i2s_num, NULL ) ;                     // Yes, default pins for internal DAC
+    dbgprint ( "I2S setpin error!" ) ;                             // Rport bad pis
+    while ( true)                                                  // Forever..
+    {
+      xQueueReceive ( dataqueue, &inchunk, 500 ) ;                 // Ignore all chunk from queue
+    }
   }
-  else
-  {
-    dbgprint ( "Output to I2S, pins %d, %d and %d",                 // Show pins used for output device
-               pin_config.bck_io_num,                               // This is the BCK (bit clock) pin
-               pin_config.ws_io_num,                                // This is L(R)CK pin
-               pin_config.data_out_num ) ;                          // This is DATA output pin
-    pinss_err = i2s_set_pin ( i2s_num, &pin_config ) ;              // Set I2S pins
-  }
-  if ( pinss_err != ESP_OK )                                        // Check error condition
-  {
-    dbgprint ( "IS2 setpin error!" ) ;
-  }
-  if ( internal_dac )                                              // Use internal (8 bit) DAC?
-  {
+  #ifdef DEC_HELIX_INT                                             // Use internal (8 bit) DAC?
     i2s_set_dac_mode ( I2S_DAC_CHANNEL_BOTH_EN ) ;                 // Enable DACs
-  }
+  #endif
   while ( true )
   {
     if ( xQueueReceive ( dataqueue, &inchunk, 500 ) )               // Get next chunk from queue
