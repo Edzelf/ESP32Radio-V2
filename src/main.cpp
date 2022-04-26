@@ -85,11 +85,11 @@
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Mon, 25 Apr 2022 14:35:00 GMT"
+#define VERSION     "Wed, 26 Apr 2022 07:50:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include <WiFi.h>
-#include "../include/config.h"                            // Specify display type, decoder type
+#include "config.h"                                       // Specify display type, decoder type
 #include <nvs.h>                                          // Access to NVS
 #include <PubSubClient.h>                                 // MTTQ access
 #ifdef ETHERNET
