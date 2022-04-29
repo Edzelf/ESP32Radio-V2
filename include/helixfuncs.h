@@ -9,7 +9,6 @@
 #define OUTSIZE                 2048                 // Max number of samples per channel (mp3 and aac)
 
 extern bool      muteflag ;                          // True if output must be muted
-extern bool      internal_dac ;                      // True if internal DAC is used
 extern String    audio_ct ;                          // Content type, like "audio/aacp"
 
 static int16_t   vol ;                               // Volume 0..100 percent
@@ -178,20 +177,20 @@ void playChunk ( i2s_port_t i2s_num, const uint8_t* chunk )
     {
       memset ( outbuf, 0, smpbytes ) ;                // Yes, clear buffer
     }
-    else if ( internal_dac )                          // Internal DAC used?
-    {
-      for ( int i = 0 ; i < smpwords ; i++ )          // Yes, modify output buffer because
-      {
-        outbuf[i] = ( outbuf[i] * vol / 100 ) +       // Scale according to volume
-                    0x8000 ;                          // internal DAC is not signed
-      }
-    }
     else
     {
-      for ( int i = 0 ; i < smpwords ; i++ )          // Volume scaling
-      {
-        outbuf[i] = outbuf[i] * vol / 100 ;           // Scale according to volume
-      }
+      #ifdef DEC_HELIX_INT                            // Internal DAC used?
+        for ( int i = 0 ; i < smpwords ; i++ )        // Yes, modify output buffer because
+        {
+          outbuf[i] = ( outbuf[i] * vol / 100 ) +     // Scale according to volume
+                      0x8000 ;                        // internal DAC is not signed
+        }
+      #else
+        for ( int i = 0 ; i < smpwords ; i++ )        // Volume scaling
+        {
+          outbuf[i] = outbuf[i] * vol / 100 ;         // Scale according to volume
+        }
+      #endif
     }
     i2s_write ( i2s_num, outbuf, smpbytes, &bw,       // Send to I2S
                 portMAX_DELAY  ) ;
