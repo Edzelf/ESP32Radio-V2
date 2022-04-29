@@ -85,7 +85,7 @@
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Wed, 26 Apr 2022 07:50:00 GMT"
+#define VERSION     "Fri, 29 Apr 2022 07:50:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include <WiFi.h>
@@ -1508,16 +1508,13 @@ void EthEvent ( WiFiEvent_t event )
   switch ( event )                                    // What event?
   {
     case SYSTEM_EVENT_ETH_START :
-    case 18 :
       dbgprint ( "ETH Started" ) ;                    // Driver started
       ETH.setHostname ( NAME ) ;                      // Set the eth hostname now
       break ;
     case SYSTEM_EVENT_ETH_CONNECTED :
-    case 20 :
       dbgprint ( "ETH cable connected" ) ;            // We have a connection
       break ;
     case SYSTEM_EVENT_ETH_GOT_IP :
-    case 22 :
       if ( ETH.fullDuplex() )                         // IP received from DHCP
       {
         fd = ", FULL_DUPLEX" ;                        // It is full duplex
@@ -1530,12 +1527,10 @@ void EthEvent ( WiFiEvent_t event )
       eth_connected = true ;                          // Set global flag: connection OK
       break ;
     case SYSTEM_EVENT_ETH_DISCONNECTED :
-    case 21 :
       dbgprint ( "ETH cable disconnected" ) ;         // We have a disconnection
       eth_connected = false ;                         // Clear the global flag
       break ;
     case SYSTEM_EVENT_ETH_STOP :
-    case 19 :
       dbgprint ( "ETH Stopped" ) ;
       eth_connected = false ;
       break ;
@@ -4443,7 +4438,7 @@ void playtask ( void * parameter )
      .bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT,
      .channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT,
      //.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
-     .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+     .communication_format = I2S_COMM_FORMAT_I2S,
      .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,                  // High interrupt priority
      .dma_buf_count        = 8,
      .dma_buf_len          = 256,
@@ -4466,7 +4461,7 @@ void playtask ( void * parameter )
     i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER |                // Yes, set I2S mode
                                    I2S_MODE_TX |
                                    I2S_MODE_DAC_BUILT_IN ) ;        // Enable internal DAC
-    i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2S ;   // Only use MSB part
+    i2s_config.communication_format = I2S_COMM_FORMAT_I2S ;         // Only use MSB part
   #endif
   if ( i2s_driver_install ( i2s_num, &i2s_config, 0, NULL ) != ESP_OK )
   {
