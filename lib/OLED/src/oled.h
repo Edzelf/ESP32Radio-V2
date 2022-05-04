@@ -8,14 +8,24 @@
 #ifndef OLED_H
 #define OLED_H
 #include <Arduino.h>
-#include <driver/i2c.h>
 #include <string.h>
+
+#ifdef OLED1309                           // Set type acoording to definition
+  #define OLEDTYP 1309
+#endif
+#ifdef OLED1106
+  #define OLEDTYP 1106
+#endif
+#ifdef OLED1306
+  #define OLEDTYP 1306
+#endif
+
 
 #define OLED_I2C_ADDRESS   0x3C
 #define SCREEN_WIDTH        128                    // OLED display width, in pixels
 #define SCREEN_HEIGHT        64                    // OLED display height, in pixels
 #define DISPLAYTYPE      "OLED"
-#define INIPARS     ini_block.tft_sda_pin, ini_block.tft_scl_pin  // Parameters for dsp_begin
+#define INIPARS     ini_block.tft_sda_pin, ini_block.tft_scl_pin, OLEDTYP  // Parameters for dsp_begin
 #define TIMEPOS             -52                    // Position (column) of time in topline relative to end
 
 // Color definitions.  OLED only have 2 colors.
@@ -60,14 +70,11 @@ class OLED
     void      fillRect ( uint8_t x, uint8_t y,        // Fill a rectangle
                          uint8_t w, uint8_t h,
                          uint8_t color ) ;
-    void      drawBitmap ( uint8_t x, uint8_t y,      // Bitmap to display buffer
-                           uint8_t* buf,
-                           uint8_t w,
-                           uint8_t h ) ;        
+    //void      drawBitmap ( uint8_t x, uint8_t y,      // Bitmap to display buffer
+    //                       uint8_t* buf,
+    //                       uint8_t w,
+    //                       uint8_t h ) ;        
   private:
-    bool                    isSH1106 = false ;        // Display is a SH1106 or not
-    bool                    isSSD1309 = false ;       // Display is a SSD1309 or not
-    i2c_cmd_handle_t        i2Cchan ;                 // Channel for I2C communication
     struct page_struct*     ssdbuf = NULL ;
     const  uint8_t*         font ;                    // Font to use
     uint8_t                 xchar = 0 ;               // Current cursor position (text)
@@ -104,7 +111,7 @@ extern scrseg_struct OLED_tftdata[TFTSECS] ;          // Screen divided in segme
 
 void oled_displaybattery ( uint16_t bat0, uint16_t bat100, uint16_t adcval ) ;
 void oled_displaytime ( const char* str, uint16_t color = 0xFFFF ) ;
-bool oled_dsp_begin ( uint8_t sda_pin, uint8_t scl_pin ) ;
+bool oled_dsp_begin ( uint8_t sda_pin, uint8_t scl_pin, uint16_t olt ) ;
 void oled_displayvolume  ( uint8_t vol ) ;
 
 // Control byte

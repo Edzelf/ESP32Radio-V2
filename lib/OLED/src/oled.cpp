@@ -4,13 +4,15 @@
 // Driver for SSD1306/SSD1309/SH1106 display                                                        *
 //***************************************************************************************************
 // 25-02-2021, ES: Correct bug, isSH1106 was always set.                                            *
+// 04-05-2022, ES: Uses Wire library now
 //***************************************************************************************************
-#include <driver/i2c.h>
+#include <Wire.h>
 #include <string.h>
 #include "oled.h"
 
-char*       dbgprint ( const char* format, ... ) ;          // Print a formatted debug line
+char*       dbgprint ( const char* format, ... ) ;    // Print a formatted debug line
 
+uint16_t     oledtyp ;                                // Type of OLED
 OLED*        tft ;                                    // Object for display
 scrseg_struct OLED_tftdata[TFTSECS] =                 // Screen divided in 3 segments + 1 overlay
 {                                                     // One text line is 8 pixels
@@ -21,9 +23,16 @@ scrseg_struct OLED_tftdata[TFTSECS] =                 // Screen divided in 3 seg
 } ;
 
 
-bool oled_dsp_begin ( uint8_t sda_pin, uint8_t scl_pin )
+//***********************************************************************************************
+//                                  O L E D _ D S P _ B E G I N                                 *
+//***********************************************************************************************
+// Init display.                                                                                *
+//***********************************************************************************************
+bool oled_dsp_begin ( uint8_t sda_pin, uint8_t scl_pin, uint16_t olt )
 {
-  dbgprint ( "Init OLED, I2C pins %d,%d",
+  oledtyp = olt ;                                  // Save OLED type
+  dbgprint ( "Init OLED %d, I2C pins %d,%d",
+             oledtyp,
              sda_pin,
              scl_pin ) ;
   if ( ( sda_pin >= 0 ) &&
@@ -37,44 +46,6 @@ bool oled_dsp_begin ( uint8_t sda_pin, uint8_t scl_pin )
     dbgprint ( "Init OLED failed!" ) ;
   }
   return ( tft != NULL ) ;
-}
-
-
-//***********************************************************************************************
-//                                O L E D :: W R I 2 C C H A N                                  *
-//***********************************************************************************************
-// Write 1 byte to the I2C buffer.                                                              *
-//***********************************************************************************************
-void OLED::wrI2Cchan ( uint8_t b )                  // Send 1 byte to I2C buffer
-{
-  i2c_master_write_byte ( i2Cchan, b, true ) ;      // Add 1 byte to I2C buffer
-}
-
-
-//***********************************************************************************************
-//                                O L E D :: O P E N I 2 C C H A N                              *
-//***********************************************************************************************
-// Open an I2c channel for communication.                                                       *
-//***********************************************************************************************
-void OLED::openI2Cchan()
-{
-  i2Cchan = i2c_cmd_link_create() ;                            // Create the link
-  i2c_master_start ( i2Cchan ) ;                               // Start collecting data in buffer
-  wrI2Cchan ( (OLED_I2C_ADDRESS << 1) | I2C_MASTER_WRITE ) ;   // Send I2C address and write bit
-}
-
-
-//***********************************************************************************************
-//                                O L E D :: C L O S E I 2 C C H A N                            *
-//***********************************************************************************************
-// Seend buffer and close the I2c channel.                                                      *
-//***********************************************************************************************
-void OLED::closeI2Cchan()
-{
-  i2c_master_stop ( i2Cchan ) ;                           // Stop filling buffer
-  i2c_master_cmd_begin ( I2C_NUM_0, i2Cchan,              // Start actual transfer
-                         10 / portTICK_PERIOD_MS ) ;      // Time-out
-  i2c_cmd_link_delete ( i2Cchan ) ;                       // Delete the link
 }
 
 
@@ -96,8 +67,8 @@ void OLED::print ( char c )
   {
     xchar = SCREEN_WIDTH ;                               // Yes, force next line
   }
-  xchar += ( OLEDFONTWIDTH + 1 ) ;                    // Move x cursor
-  if ( xchar > ( SCREEN_WIDTH - OLEDFONTWIDTH ) )     // End of line?
+  xchar += ( OLEDFONTWIDTH + 1 ) ;                      // Move x cursor
+  if ( xchar > ( SCREEN_WIDTH - OLEDFONTWIDTH ) )        // End of line?
   {
     xchar = 0 ;                                          // Yes, mimic CR
     ychar = ( ychar + 1 ) & 7 ;                          // And LF
@@ -119,9 +90,9 @@ void OLED::print ( const char* str )
   }
 }
 
-
+#ifdef EXCLUDEDDRAWBITMAP
 //***********************************************************************************************
-//                                OLED :: D R A W B I T M A P                                   *
+//                              O L E D :: D R A W B I T M A P                                  *
 //***********************************************************************************************
 // Copy a bitmap to the display buffer.                                                         *
 //***********************************************************************************************
@@ -159,7 +130,7 @@ void OLED::drawBitmap ( uint8_t x, uint8_t y, uint8_t* buf, uint8_t w, uint8_t h
     ssdbuf[pg].dirty = true ;                             // Page has been changed
   }
 }
-
+#endif
 
 //***********************************************************************************************
 //                                O L E D :: D I S P L A Y                                   *
@@ -169,32 +140,33 @@ void OLED::drawBitmap ( uint8_t x, uint8_t y, uint8_t* buf, uint8_t w, uint8_t h
 void OLED::display()
 {
   uint8_t        pg ;                                         // Page number 0..OLED_NPAG - 1
-  static uint8_t fillbuf[] = { 0, 0, 0, 0 } ;                 // To clear 4 bytes of SH1106 RAM
 
   for ( pg = 0 ; pg < OLED_NPAG ; pg++ )
   {
     if ( ssdbuf[pg].dirty )                                   // Refresh needed?
     {
       ssdbuf[pg].dirty = false ;                              // Yes, set page to "up-to-date"
-      openI2Cchan() ;                                         // Open I2C channel
-      wrI2Cchan ( OLED_CONTROL_BYTE_CMD_SINGLE ) ;            // Set single byte command mode
-      wrI2Cchan ( 0xB0 | pg ) ;                               // Set page address
-      if ( isSH1106 || isSSD1309 )                            // Is it an SH1106 or SSD1309?
+      Wire.beginTransmission ( OLED_I2C_ADDRESS ) ;           // Begin transmission
+      Wire.write ( (uint8_t)OLED_CONTROL_BYTE_CMD_SINGLE ) ;  // Set single byte command mode
+      Wire.write ( (uint8_t)(0xB0 | pg ) ) ;                  // Set page address
+      if ( ( oledtyp == 1106 ) || ( oledtyp == 1309 ) )       // Is it an SH1106/ SSD1309?
       {
-        wrI2Cchan ( 0x00 ) ;                           	      // Set lower column address to 0
-        wrI2Cchan ( 0x10 ) ;                                  // Set higher column address to 0
+        Wire.write ( (uint8_t)0x00 ) ;                        // Set lower column address to 0
+        Wire.write ( (uint8_t)0x10 ) ;                        // Set higher column address to 0
       }
-      closeI2Cchan() ;                                        // Send and close I2C channel
+      Wire.write ( (uint8_t)OLED_CONTROL_BYTE_DATA_STREAM ) ; // Set multi byte data mode
+      if ( oledtyp == 1106 )                                  // Is it an SH1106?
+      {
+        uint8_t fillbuf[] = { 0, 0, 0, 0 } ;                  // To clear 4 bytes of SH1106 RAM
+        Wire.write ( fillbuf, 4 ) ;                           // Yes, fill extra RAM with zeroes
+      }
+      Wire.write ( ssdbuf[pg].page, 64 ) ;                    // Send 1st half page with data
+      Wire.endTransmission() ;                                // End of transmission
       // Channel is closed and reopened because of limited buffer space
-      openI2Cchan() ;                                         // Open I2C channel again
-      wrI2Cchan ( OLED_CONTROL_BYTE_DATA_STREAM ) ;           // Set multi byte data mode
-      if ( isSH1106 )                                         // Is it a SH1106?
-      {
-        i2c_master_write ( i2Cchan, fillbuf, 4, true ) ;      // Yes, fill extra RAM with zeroes
-      }
-      i2c_master_write ( i2Cchan, ssdbuf[pg].page, 128,       // Send 1 page with data
-                         true ) ;
-      closeI2Cchan() ;                                        // Send and close I2C channel
+      Wire.beginTransmission ( OLED_I2C_ADDRESS ) ;           // Begin transmission
+      Wire.write ( (uint8_t)OLED_CONTROL_BYTE_DATA_STREAM ) ; // Set multi byte data mode
+      Wire.write ( ssdbuf[pg].page + 64, 64 ) ;               // Send 2nd half page with data
+      Wire.endTransmission() ;                                // End of transmission
     }
   }
 }
@@ -271,15 +243,6 @@ void OLED::fillRect ( uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t color 
 //***********************************************************************************************
 OLED::OLED ( uint8_t sda, uint8_t scl )
 {
-  i2c_config_t   i2c_config =                                // Set-up of I2C configuration
-    {
-      I2C_MODE_MASTER, 
-      (gpio_num_t)sda,                                       // Pull ups for sda and scl
-      GPIO_PULLUP_ENABLE,
-      (gpio_num_t)scl,
-      GPIO_PULLUP_ENABLE,
-      400000                                                 // High speed
-    } ;
   uint8_t      initbuf[] =                                   // Initial commands to init OLED
                   {
                     OLED_CONTROL_BYTE_CMD_STREAM,            // Stream next bytes
@@ -301,22 +264,12 @@ OLED::OLED ( uint8_t sda, uint8_t scl )
                     OLED_CMD_SCROLL_OFF,                     // Stop scrolling
                     OLED_CMD_DISPLAY_ON                      // Display on
                   } ;
-  #if defined ( OLED1106 )                                      // Is it an SH1106?
-    isSH1106 = true ;                                           // Set display type                         
-  #endif
-  dbgprint ( "ISSH116 is %d", (int)isSH1106 ) ;
-  #if defined ( OLED1309 )                                      // Is it an SSD1309?
-    isSSD1309 = true ;                                          // Set display type                         
-  #endif
-  dbgprint ( "ISSSD1309 is %d", (int)isSSD1309 ) ;
   ssdbuf = (page_struct*) malloc ( 8 * sizeof(page_struct) ) ;  // Create buffer for screen
   font = OLEDfont ;
-  i2c_param_config ( I2C_NUM_0, &i2c_config ) ;
-  i2c_driver_install ( I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0 ) ;
-  openI2Cchan() ;                                               // Open I2C channel
-  i2c_master_write (  i2Cchan, initbuf, sizeof(initbuf),
-                      true ) ;
-  closeI2Cchan() ;                                              // Send and close I2C channel
+  Wire.begin ( sda, scl ) ; //, 150000 ) ;                             // Init I2c
+  Wire.beginTransmission ( OLED_I2C_ADDRESS ) ;                 // Begin transmission
+  Wire.write ( initbuf, sizeof(initbuf) ) ;                     // Write init buffer
+  Wire.endTransmission() ;                                      // End of transmission
   clear() ;                                                     // Clear the display
 }
 
