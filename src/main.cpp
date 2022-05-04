@@ -85,7 +85,7 @@
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Fri, 29 Apr 2022 07:50:00 GMT"
+#define VERSION     "Wed, 04 May 2022 15:30:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include <WiFi.h>
@@ -2853,6 +2853,7 @@ if ( NetworkFound )
   }
   tftset ( 0, NAME ) ;                                    // Set screen segment text top line
   presetinfo.station_state = ST_PRESET ;                  // Start in preset mode
+  nextPreset ( nvsgetstr ( "preset" ).toInt(), false  ) ; // Resore last preset
   if ( NetworkFound )                                     // Start with preset if network available
   {
     myQueueSend ( radioqueue, &startcmd ) ;               // Start player in radio mode
@@ -4446,14 +4447,15 @@ void playtask ( void * parameter )
      .tx_desc_auto_clear   = true,                                  // clear tx descriptor on underflow
      .fixed_mclk           = I2S_PIN_NO_CHANGE,                     // No pin for MCLK
   } ;
-  i2s_pin_config_t pin_config =
-  {
-      .bck_io_num            = ini_block.i2s_bck_pin,               // This is BCK pin
-      .ws_io_num             = ini_block.i2s_lck_pin,               // This is L(R)CK pin
-      .data_out_num          = ini_block.i2s_din_pin,               // This is DATA output pin
-      .data_in_num           = -1                                   // No input
-  } ;
-
+  #ifndef DEC_HELIX_INT
+    i2s_pin_config_t pin_config =
+    {
+        .bck_io_num            = ini_block.i2s_bck_pin,             // This is BCK pin
+        .ws_io_num             = ini_block.i2s_lck_pin,             // This is L(R)CK pin
+        .data_out_num          = ini_block.i2s_din_pin,             // This is DATA output pin
+        .data_in_num           = -1                                 // No input
+    } ;
+  #endif
   dbgprint ( "Starting I2S playtask.." ) ;
   MP3Decoder_AllocateBuffers() ;                                    // Init HELIX buffers
   AACDecoder_AllocateBuffers() ;                                    // Init HELIX buffers
