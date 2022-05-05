@@ -3,11 +3,9 @@
 //
 
 #define MAXFNLEN    512                               // Max length of a full filespec
-#define MAXSPACE    20000                             // Max space for filenames (bytes, not tracks)
+#define MAXSPACE    40000                             // Max space for filenames (bytes, not tracks).
                                                       // Approx. 36 tracks per kB
 #define SD_MAXDEPTH 4                                 // Maximum depths.  Note: see mp3play_html.
-
-#define SDPRESENT   4                                 // GPIO Pin will be low if card inserted
 
 struct mp3specbuf_t
 {
@@ -245,14 +243,15 @@ struct mp3spec_t                                      // For List of mp3 file on
   //                                      G E T S D T R A C K S                                      *
   //**************************************************************************************************
   // Search all MP3 files on directory of SD card.                                                   *
+  // Will be called recursively.                                                                     *
   //**************************************************************************************************
-  void getsdtracks ( fs::FS &fs, const char * dirname, uint8_t levels )
+  void getsdtracks ( const char * dirname, uint8_t levels )
   {
     File       root ;                                     // Work directory
     File       file ;                                     // File in work directory
 
     claimSPI ( "sdopen1" ) ;                              // Claim SPI bus
-    root = fs.open ( dirname ) ;                          // Open directory
+    root = SD.open ( dirname ) ;                          // Open directory
     releaseSPI() ;                                        // Release SPI bus
     if ( !root )                                          // Check on open
     {
@@ -276,7 +275,7 @@ struct mp3spec_t                                      // For List of mp3 file on
         {
           if ( strrchr ( file.name(), '/' )[1] != '.' )   // Skip hidden directories
           {
-            getsdtracks ( fs, file.name(), levels -1 ) ;  // Non hidden directory: call recursive
+            getsdtracks ( file.name(), levels -1 ) ;      // Non hidden directory: call recursive
           }
         }
       }
@@ -479,16 +478,14 @@ struct mp3spec_t                                      // For List of mp3 file on
   //**************************************************************************************************
   void scan_SDCARD()
   {
-    clearFileList() ;                                // Create list with names and count
+    clearFileList() ;                                   // Create list with names and count
     dbgprint ( "Locate mp3 files on SD, "
               "may take a while..." ) ;
-    getsdtracks ( SD, "/", SD_MAXDEPTH ) ;           // Build file list
+    getsdtracks ( "/", SD_MAXDEPTH ) ;                  // Build file list
     dbgprint ( "Space %d", ESP.getFreeHeap() ) ;
-    dbgprint ( "%d tracks on SD",
-                    SD_filecount ) ;
-    getFirstSDFileName() ;                           // Point to first entry
+    dbgprint ( "%d tracks on SD", SD_filecount ) ;      // Show number of files
+    getFirstSDFileName() ;                              // Point to first entry
   }
-
 
 
   //**************************************************************************************************
