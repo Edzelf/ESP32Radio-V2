@@ -85,7 +85,7 @@
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Wed, 04 May 2022 15:30:00 GMT"
+#define VERSION     "Thu, 05 May 2022 09:25:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include <WiFi.h>
@@ -4463,7 +4463,7 @@ void playtask ( void * parameter )
     i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER |                // Yes, set I2S mode
                                    I2S_MODE_TX |
                                    I2S_MODE_DAC_BUILT_IN ) ;        // Enable internal DAC
-    i2s_config.communication_format = I2S_COMM_FORMAT_I2S ;         // Only use MSB part
+    i2s_config.communication_format = I2S_COMM_FORMAT_I2S_MSB ;     // Only use MSB part
   #endif
   if ( i2s_driver_install ( i2s_num, &i2s_config, 0, NULL ) != ESP_OK )
   {
