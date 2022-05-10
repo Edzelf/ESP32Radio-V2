@@ -140,20 +140,28 @@ void OLED::drawBitmap ( uint8_t x, uint8_t y, uint8_t* buf, uint8_t w, uint8_t h
 void OLED::display()
 {
   uint8_t        pg ;                                         // Page number 0..OLED_NPAG - 1
+  static bool    a  = true ;
 
+  if ( a )
+  {
+    Serial.printf ( "I2C buf is %d\n", I2C_BUFFER_LENGTH ) ;
+    a = false ;
+  }
   for ( pg = 0 ; pg < OLED_NPAG ; pg++ )
   {
     if ( ssdbuf[pg].dirty )                                   // Refresh needed?
     {
       ssdbuf[pg].dirty = false ;                              // Yes, set page to "up-to-date"
       Wire.beginTransmission ( OLED_I2C_ADDRESS ) ;           // Begin transmission
-      Wire.write ( (uint8_t)OLED_CONTROL_BYTE_CMD_SINGLE ) ;  // Set single byte command mode
+      Wire.write ( (uint8_t)OLED_CONTROL_BYTE_CMD_STREAM ) ;  // Set single byte command mode
       Wire.write ( (uint8_t)(0xB0 | pg ) ) ;                  // Set page address
       if ( ( oledtyp == 1106 ) || ( oledtyp == 1309 ) )       // Is it an SH1106/ SSD1309?
       {
         Wire.write ( (uint8_t)0x00 ) ;                        // Set lower column address to 0
         Wire.write ( (uint8_t)0x10 ) ;                        // Set higher column address to 0
       }
+      Wire.endTransmission() ;                                // End of transmission
+      Wire.beginTransmission ( OLED_I2C_ADDRESS ) ;           // Begin transmission
       Wire.write ( (uint8_t)OLED_CONTROL_BYTE_DATA_STREAM ) ; // Set multi byte data mode
       if ( oledtyp == 1106 )                                  // Is it an SH1106?
       {
@@ -241,7 +249,7 @@ void OLED::fillRect ( uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t color 
 //***********************************************************************************************
 // Constructor for the display.                                                                 *
 //***********************************************************************************************
-OLED::OLED ( uint8_t sda, uint8_t scl )
+OLED::OLED ( int sda, int scl )
 {
   uint8_t      initbuf[] =                                   // Initial commands to init OLED
                   {
@@ -266,7 +274,7 @@ OLED::OLED ( uint8_t sda, uint8_t scl )
                   } ;
   ssdbuf = (page_struct*) malloc ( 8 * sizeof(page_struct) ) ;  // Create buffer for screen
   font = OLEDfont ;
-  Wire.begin ( sda, scl ) ; //, 150000 ) ;                             // Init I2c
+  Wire.begin ( sda, scl ) ;                                     // Init I2c
   Wire.beginTransmission ( OLED_I2C_ADDRESS ) ;                 // Begin transmission
   Wire.write ( initbuf, sizeof(initbuf) ) ;                     // Write init buffer
   Wire.endTransmission() ;                                      // End of transmission
