@@ -2,7 +2,9 @@
 //*  LCD2004.h -- Driver for LCD 2004 display with I2C backpack.                                    *
 //***************************************************************************************************
 // The backpack communicates with the I2C bus and converts the serial data to parallel for the      *
-// 2004 board.  In the serial data, the 8 bits are assigned as follows:                             *
+// 2004 board.                                                                                      *
+// Do not forget the PULL-UP resistors (4.7k on both SDA and CLK).                                  *
+// In the serial data, the 8 bits are assigned as follows:                                          *
 // Bit   Destination  Description                                                                   *
 // ---   -----------  ------------------------------------                                          *
 //  0    RS           H=data, L=command                                                             *
@@ -19,14 +21,14 @@
 
 #ifndef LCD2004_H
 #define LCD2004_H
-#include <driver/i2c.h>
+#include <Wire.h>
 
-#define I2C_ADDRESS 0x27                                          // Adjust for your display
-#define ACKENA      true                                          // Enable ACK for I2C communication
-#define INIPARS     ini_block.tft_sda_pin, ini_block.tft_scl_pin  // Parameters for dsp_begin
-#define TIMEPOS     0                                             // Position (column) of time in topline (unused)
-#define TFTSECS     4                                             // 4 sections, only 2 used
-#define DISPLAYTYPE "LCD2004"
+#define LCD_I2C_ADDRESS 0x27                                          // Adjust for your display
+#define ACKENA          true                                          // Enable ACK for I2C communication
+#define INIPARS         ini_block.tft_sda_pin, ini_block.tft_scl_pin  // Parameters for dsp_begin
+#define TIMEPOS         0                                             // Position (column) of time in topline (unused)
+#define TFTSECS         4                                             // 4 sections, only 2 used
+#define DISPLAYTYPE     "LCD2004"
 
 // Color definitions for the TFT screen (if used)
 #define BLACK   0
@@ -98,7 +100,7 @@ extern scrseg_struct     LCD2004_tftdata[TFTSECS] ;                // Screen div
 class LCD2004
 {
   public:
-                     LCD2004 ( uint8_t sda, uint8_t scl ) ; // Constructor
+                     LCD2004 ( int sda, int scl ) ;         // Constructor
     void             print ( char c ) ;                     // Send 1 char
     void             reset() ;                              // Perform reset
     void             sclear() ;                             // Clear the screen
@@ -106,8 +108,6 @@ class LCD2004
     void             scursor ( uint8_t col, uint8_t row ) ; // Position the cursor
     void             scroll ( bool son ) ;                  // Set scroll on/off
   private:
-    i2c_config_t     i2c_config ;                           // I2C configuration
-    i2c_cmd_handle_t hnd ;                                  // Handle for driver
     void             scommand ( uint8_t cmd ) ;
     void             strobe ( uint8_t cmd ) ;
     void             swrite ( uint8_t val, uint8_t rs ) ;
@@ -123,7 +123,7 @@ extern LCD2004* LCD2004_tft ;
 void LCD2004_displaybattery ( uint16_t bat0, uint16_t bat100, uint16_t adcval ) ;
 void LCD2004_displayvolume  ( uint8_t vol ) ;
 void LCD2004_displaytime    ( const char* str, uint16_t color = 0xFFFF ) ;
-bool LCD2004_dsp_begin      ( uint8_t cs, uint8_t dc ) ;
+bool LCD2004_dsp_begin      ( int sda, int scl ) ;
 void LCD2004_dsp_update     ( bool isvolume ) ;
 
 #endif

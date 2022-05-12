@@ -1,8 +1,10 @@
 //***************************************************************************************************
-//*  LCD2004.h -- Driver for LCD 2004 display with I2C backpack.                                    *
+//*  LCD2004.cpp -- Driver for LCD 2004 display with I2C backpack.                                  *
 //***************************************************************************************************
 // The backpack communicates with the I2C bus and converts the serial data to parallel for the      *
-// 2004 board.  In the serial data, the 8 bits are assigned as follows:                             *
+// 2004 board.                                                                                      *
+// Do not forget the PULL-UP resistors (4.7k on both SDA and CLK).                                  *
+// In the serial data, the 8 bits are assigned as follows:                                          *
 // Bit   Destination  Description                                                                   *
 // ---   -----------  ------------------------------------                                          *
 //  0    RS           H=data, L=command                                                             *
@@ -14,8 +16,13 @@
 //  6    D6           Data bit 6                                                                    *
 //  7    D7           Data bit 7                                                                    *
 //***************************************************************************************************
-//
-// Note that the display function are limited due to the minimal available space.
+//                                                                                                  *
+// Note that the display function are limited due to the minimal available space.                   *
+//  History:                                                                                        *
+//   Date     Author        Remarks                                                                 *
+// ----------  --  ------------------------------------------------------------------               *
+// 12-05-2022, ES: Correction scrolling lines.                                                      *
+//***************************************************************************************************
 
 #include <Arduino.h>
 #include "LCD2004.h"
@@ -35,7 +42,7 @@ scrseg_struct     LCD2004_tftdata[TFTSECS] =                // Screen divided in
 
 LCD2004* LCD2004_tft = NULL ;
 
-bool LCD2004_dsp_begin (  uint8_t sda, uint8_t scl  )
+bool LCD2004_dsp_begin (  int sda, int scl  )
 {
   dbgprint ( "Init LCD2004, I2C pins %d,%d", sda, scl ) ;
   if ( ( sda >= 0 ) && ( scl >= 0 ) )
@@ -57,7 +64,7 @@ bool LCD2004_dsp_begin (  uint8_t sda, uint8_t scl  )
 //***********************************************************************************************
 void LCD2004::swrite ( uint8_t val, uint8_t rs )          // General write, 8 bits data
 {
-  strobe ( ( val & 0xf0 ) | rs ) ;                        // Send 4 LSB bits
+  strobe ( ( val & 0xF0 ) | rs ) ;                        // Send 4 LSB bits
   strobe ( ( val << 4 ) | rs ) ;                          // Send 4 MSB bits
 }
 
@@ -82,6 +89,7 @@ void LCD2004::write_cmd ( uint8_t val )
 void LCD2004::strobe ( uint8_t cmd )
 {
   scommand ( cmd | FLAG_ENABLE ) ;                  // Send command with E high
+  delayMicroseconds ( DELAY_ENABLE_PULSE_SETTLE ) ; // Wait a short time
   scommand ( cmd ) ;                                // Same command with E low
   delayMicroseconds ( DELAY_ENABLE_PULSE_SETTLE ) ; // Wait a short time
 }
@@ -95,20 +103,9 @@ void LCD2004::strobe ( uint8_t cmd )
 //***********************************************************************************************
 void LCD2004::scommand ( uint8_t cmd )
 {
-  hnd = i2c_cmd_link_create() ;                           // Create a link
-  if ( i2c_master_start ( hnd ) |
-       i2c_master_write_byte ( hnd, (I2C_ADDRESS << 1) |  // Add I2C address to output buffer
-                                    I2C_MASTER_WRITE,
-                               ACKENA ) |
-       i2c_master_write_byte ( hnd, cmd | bl,             // Add command including BL state
-                               ACKENA ) |
-       i2c_master_stop ( hnd ) |                          // End of data for I2C
-       i2c_master_cmd_begin ( I2C_NUM_0, hnd,             // Send bufferd data to LCD
-                              10 / portTICK_PERIOD_MS ) )
-  {
-    dbgprint ( "LCD2004 communication error!" ) ;         // Something went wrong (not connected)
-  }
-  i2c_cmd_link_delete ( hnd ) ;                           // Link not needed anymore
+  Wire.beginTransmission ( LCD_I2C_ADDRESS ) ;
+  Wire.write ( cmd | bl ) ;                               // Add command including BL state
+  Wire.endTransmission() ;
 }
 
 
@@ -185,30 +182,60 @@ void LCD2004::shome()
 //***********************************************************************************************
 void LCD2004::reset()
 {
+  uint8_t initcmds[] = {
+              COMMAND_FUNCTION_SET |
+              FLAG_FUNCTION_SET_MODE_4BIT |
+              FLAG_FUNCTION_SET_LINES_2 |
+              FLAG_FUNCTION_SET_DOTS_5X8,
+              COMMAND_DISPLAY_CONTROL |
+              FLAG_DISPLAY_CONTROL_DISPLAY_ON,
+              COMMAND_CLEAR_DISPLAY,
+              COMMAND_ENTRY_MODE_SET |
+              FLAG_ENTRY_MODE_SET_ENTRY_INCREMENT } ;
+
   scommand ( 0 ) ;                                // Put expander to known state
-  delayMicroseconds ( 1000 ) ;
+  delay ( 35 ) ;
   for ( int i = 0 ; i < 3 ; i++ )                 // Repeat 3 times
   {
     strobe ( 0x03 << 4 ) ;                        // Select 4-bit mode
-    delayMicroseconds ( 4500 ) ;
+    delay ( 5 ) ;
   }
   strobe ( 0x02 << 4 ) ;                          // 4-bit
-  delayMicroseconds ( 4500 ) ;
-  write_cmd ( COMMAND_FUNCTION_SET |
-              FLAG_FUNCTION_SET_MODE_4BIT |
-              FLAG_FUNCTION_SET_LINES_2 |
-              FLAG_FUNCTION_SET_DOTS_5X8 ) ;
-  write_cmd ( COMMAND_DISPLAY_CONTROL |
-              FLAG_DISPLAY_CONTROL_DISPLAY_ON ) ;
-  sclear() ;
-  write_cmd ( COMMAND_ENTRY_MODE_SET |
-              FLAG_ENTRY_MODE_SET_ENTRY_INCREMENT ) ;
-  shome() ;
-  for ( char a = 'a' ; a < 'q' ; a++ )
+  delay ( 5 ) ;
+  for ( int i = 0 ; i < sizeof(initcmds) ; i++ )  // Send initial commands
   {
-    print ( a ) ;
+    write_cmd ( initcmds[i] ) ;
+    delay ( 5 ) ;
   }
+  shome() ;
 }
+
+
+//**************************************************************************************************
+//                                          I 2 C S C A N                                          *
+//**************************************************************************************************
+// Utility to scan the I2C bus.                                                                    *
+//**************************************************************************************************
+// void i2cscan()
+// {
+//   byte error, address ;
+
+//   dbgprint ( "Scanning I2C bus..." ) ;
+
+//   for ( address = 1 ; address < 127 ; address++ ) 
+//   {
+//     Wire.beginTransmission ( address ) ;
+//     error = Wire.endTransmission() ;
+//     if ( error == 0 )
+//     {
+//       dbgprint ( "I2C device 0x%02X found", address ) ;
+//     }
+//     else if ( error == 4 ) 
+//     {
+//       dbgprint ( "Error 4 at address 0x%02X", address ) ;
+//     }    
+//   }
+// }
 
 
 //***********************************************************************************************
@@ -216,21 +243,24 @@ void LCD2004::reset()
 //***********************************************************************************************
 // Constructor for the display.                                                                 *
 //***********************************************************************************************
-LCD2004::LCD2004 ( uint8_t sda, uint8_t scl )
+LCD2004::LCD2004 ( int sda, int scl )
 {
-  i2c_config.mode = I2C_MODE_MASTER,
-  i2c_config.sda_io_num = (gpio_num_t)sda ;
-  i2c_config.sda_pullup_en = GPIO_PULLUP_DISABLE ;
-  i2c_config.scl_io_num = (gpio_num_t)scl ;
-  i2c_config.scl_pullup_en = GPIO_PULLUP_DISABLE ;
-  i2c_config.master.clk_speed = 100000 ;
-  if ( i2c_param_config ( I2C_NUM_0, &i2c_config ) != ESP_OK )
+  uint8_t error ;
+
+  if ( ! Wire.begin ( sda, scl ) )                             // Init I2c
   {
-    dbgprint ( "param_config error!" ) ;
+    dbgprint ( "I2C driver install error!" ) ;
   }
-  else if ( i2c_driver_install ( I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0 ) != ESP_OK )
+  else
   {
-    dbgprint ( "driver_install error!" ) ;
+    // i2cscan() ;                                               // Scan I2C bus
+    Wire.beginTransmission ( LCD_I2C_ADDRESS ) ;
+    error = Wire.endTransmission() ;
+    if ( error )
+    {
+      dbgprint ( "Display not found on I2C 0x%02X",
+                  LCD_I2C_ADDRESS ) ;
+    }    
   }
   reset() ;
 }
@@ -253,57 +283,53 @@ dsp_str dline[4] = { { "", 0, 0, 0 },
 //                                D S P _U P D A T E _ L I N E                                  *
 //***********************************************************************************************
 // Show a selected line                                                                         *
+// The resulting line is a scrolling part of the complete line.  The startposition is           *
+// ncremented by one for each call.                                                             *
 //***********************************************************************************************
 void LCD2004_dsp_update_line ( uint8_t lnr )
 {
-  uint8_t         i ;                                // Index in string
-  const char*     p ;
+  int             i ;                                 // Index in string
+  const char*     p ;                                 // Pointer to converted string
+  dsp_str*        line = &dline[lnr] ;                // Pointer to line in dline
 
-  p = dline[lnr].str.c_str() ;
-  dline[lnr].len = strlen ( p ) ;
-  //dbgprint ( "Strlen is %d, str is %s", len, p ) ;
-  if ( dline[lnr].len > dsp_getwidth() )
+  p = line->str.c_str() ;                             // Get pointer to string
+  line->len = strlen ( p ) ;                          // Get string length
+  //dbgprint ( "Str %d, len is %d, str is %s",
+  //           lnr,
+  //           line->len, p ) ;
+  if ( line->len > dsp_getwidth() )                   // Full string fits?
   {
-    if ( dline[lnr].pos >= dline[lnr].len )
+    if ( line->pos >= line->len )                     // No, pos beyond or at end of string?
     {
-      dline[lnr].pos = 0 ;
+      line->pos = 0 ;                                 // Yes, restart string
     }
     else
     {
-      p += dline[lnr].pos ;
-    }
-    dline[lnr].len -= dline[lnr].pos ;
-    if ( dline[lnr].len > dsp_getwidth() )
-    {
-      dline[lnr].len = dsp_getwidth() ;
+      p += line->pos ;                                // No, set begin of substring
     }
   }
   else
   {
-    dline[lnr].pos = 0 ;                             // String fits on screen
+    line->pos = 0 ;                                   // String fits on screen
   }
-  dline[lnr].pos++ ;
   LCD2004_tft->scursor ( 0, lnr ) ;
-  for ( i = 0 ; i < dline[lnr].len ; i++ )
+  for ( i = 0 ; i < dsp_getwidth() ; i++ )
   {
-    if ( ( *p >= ' ' ) && ( *p <= '~' ) )            // Printable?
+    if ( ( ( *p >= ' ' ) && ( *p <= '~' ) ) ||        // Printable?
+         ( *p == '\xFF' ) )                           // Allow block
     {
-      LCD2004_tft->print ( *p ) ;                    // Yes
+      LCD2004_tft->print ( *p ) ;                     // Yes
     }
     else
     {
-      LCD2004_tft->print ( ' ' ) ;                   // Yes, print space
+      LCD2004_tft->print ( ' ' ) ;                    // Yes, print space
     }
-    p++ ;
+    if ( *p )                                         // End of string reached?
+    {
+      p++ ;                                           // No, update pointer
+    }
   }
-  for ( i = 0 ; i < ( dsp_getwidth() - dline[lnr].len ) ; i++ )  // Fill remainder
-  {
-    LCD2004_tft->print ( ' ' ) ;
-  }
-  if ( *p == '\0' )                                  // At end of line?
-  {
-    dline[lnr].pos = 0 ;                             // Yes, start allover
-  }
+  line->pos++ ;                                       // No, move start position next call
 }
 
 
@@ -321,28 +347,25 @@ void LCD2004_dsp_update ( bool isvolume )
     return ;
   }
   cnt = 0 ;
-  if ( isvolume )                                       // Encoder menu mode?
+  if ( ! isvolume )                                     // Encoder menu mode?
   {
     dline[1].str = LCD2004_tftdata[3].str.substring(0,dsp_getwidth()) ;     // Yes, different lines
     dline[2].str = LCD2004_tftdata[3].str.substring(dsp_getwidth()) ;
   }
   else
   {
-    dline[2].str = LCD2004_tftdata[1].str ;                     // Local copy
-    dline[1].str = LCD2004_tftdata[2].str ;                     // Local copy
-  }  
-  dline[2].str.trim() ;                                 // Remove non printing
-  dline[1].str.trim() ;                                 // Remove non printing
-  if ( dline[2].str.length() > dsp_getwidth() )
-  {
-    dline[2].str += String ( "  " ) ;
+    dline[2].str = LCD2004_tftdata[1].str ;               // Local copy
+    dline[1].str = LCD2004_tftdata[2].str ;               // Local copy
   }
-  if ( dline[1].str.length() > dsp_getwidth() )
+  for ( int lnr = 1 ; lnr < 3 ; lnr++ )                   // Prepare lines
   {
-    dline[1].str += String ( "  " ) ;
+    dline[lnr].str.trim() ;                               // Remove non printing
+    if ( dline[lnr].str.length() > dsp_getwidth() )       // Will this be a scrolling text?
+    {
+      dline[lnr].str += String ( "  " ) ;                 // Yes, 2 spaces after scrolling
+    }
+    LCD2004_dsp_update_line ( lnr ) ;
   }
-  LCD2004_dsp_update_line ( 1 ) ;
-  LCD2004_dsp_update_line ( 2 ) ;
 }
 
 
@@ -370,17 +393,18 @@ void LCD2004_displayvolume ( uint8_t vol )
 
   if ( vol != oldvol )                                // Volume changed?
   {
+    dbgprint ( "Update volume to %d", vol ) ;
     oldvol = vol ;                                    // Remember for next compare
     pos = map ( vol, 0, 100, 0, dsp_getwidth() ) ;    // Compute end position on TFT
     for ( int i = 0 ; i < dsp_getwidth() ; i++ )      // Set oldstr to dots
     {
       if ( i <= pos )
       {
-        dline[3].str += "\x7F" ;                      // Add block character
+        dline[3].str += '\xFF' ;                     // Add block character
       }
       else
       {
-        dline[3].str += " " ;                         // Or blank sign
+        dline[3].str += ' ' ;                         // Or blank sign
       }
     }
     LCD2004_dsp_update_line(3) ;
