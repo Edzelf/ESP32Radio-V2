@@ -81,7 +81,8 @@
 // 13-04-2022, ES: Fixed redirect bug (preset was reset), fixed playlist.
 // 14-04-2022, ES: Added posibility for a fixed WiFi network.
 // 15-04-2022, ES: Redesigned station selection.
-// 25-04-2022, ES: Support foe WT32-ETH01 (wired Ethernet).
+// 25-04-2022, ES: Support for WT32-ETH01 (wired Ethernet).
+// 12-05-2022, ES: Correction I2S settings.
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
@@ -4438,18 +4439,21 @@ void playtask ( void * parameter )
      .sample_rate          = 44100,
      .bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT,              // (16)
      .channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT,             // (0)
-//     .communication_format = I2S_COMM_FORMAT_STAND_I2S,              // (1)
-     .communication_format = I2S_COMM_FORMAT_I2S ,                   // I2S_COMM_FORMAT_STAND_I2S
+     .communication_format = I2S_COMM_FORMAT_STAND_I2S,              // (1)
+//   .communication_format = I2S_COMM_FORMAT_I2S ,                   // I2S_COMM_FORMAT_STAND_I2S
      .intr_alloc_flags     = 0,                                      // Default interrupt priority
      .dma_buf_count        = 8,
      .dma_buf_len          = 256,
      .use_apll             = false,
      .tx_desc_auto_clear   = true,                                   // clear tx descriptor on underflow
-     //.fixed_mclk           = I2S_PIN_NO_CHANGE,                    // No pin for MCLK
+     .fixed_mclk           = I2S_PIN_NO_CHANGE,                      // No pin for MCLK
+     .mclk_multiple        = (i2s_mclk_multiple_t)0,
+     .bits_per_chan        = (i2s_bits_per_chan_t)0
   } ;
   #ifndef DEC_HELIX_INT
     i2s_pin_config_t pin_config =
     {
+        .mck_io_num            = I2S_PIN_NO_CHANGE,                 // MCK not used
         .bck_io_num            = ini_block.i2s_bck_pin,             // This is BCK pin
         .ws_io_num             = ini_block.i2s_lck_pin,             // This is L(R)CK pin
         .data_out_num          = ini_block.i2s_din_pin,             // This is DATA output pin
@@ -4463,7 +4467,8 @@ void playtask ( void * parameter )
     i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER |                // Yes, set I2S mode (1)
                                    I2S_MODE_TX |                    // (4)
                                    I2S_MODE_DAC_BUILT_IN ) ;        // Enable internal DAC (16)
-    i2s_config.communication_format = I2S_COMM_FORMAT_I2S_MSB ;     // Only use MSB part (2)
+    //i2s_config.communication_format = I2S_COMM_FORMAT_I2S_MSB ;     // Only use MSB part (2)
+    //i2s_config.communication_format = (i2s_comm_format_t) 2 ;
   #endif
   if ( i2s_driver_install ( i2s_num, &i2s_config, 0, NULL ) != ESP_OK )
   {
