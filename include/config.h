@@ -14,6 +14,8 @@
 //#define DEC_VS1003                                      // Hardware decoder for MP3
 //#define DEC_HELIX                                       // Software decoder for MP3, AAC. I2S output
 //#define DEC_HELIX_INT                                   // Software decoder for MP3, AAC. DAC output
+                                                          // Needs platform = espressif32@3.1.0 !!!!
+                                                          // Plus some changes in the I2S configuration
 
 // Define (just one) type of display.  See documentation.
 #define BLUETFT                                           // Works also for RED TFT 128x160
