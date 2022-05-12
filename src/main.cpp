@@ -615,7 +615,6 @@ mqttpubc         mqttpub ;                                    // Instance for mq
 // Include software for SD card.  Will include dummy if "SDCARD" is not defined
 #include "SDcard.h"                                         // For SD card interface
 
-
 //**************************************************************************************************
 //                                  M Y Q U E U E S E N D                                          *
 //**************************************************************************************************
@@ -1642,6 +1641,7 @@ bool connectwifi()
   tftlog ( "IP = " ) ;                                  // Show IP
   tftlog ( pIP, true ) ;
   #ifdef NEXTION
+    delay ( 2000 ) ;                                    // Show for some time
     dsp_println ( "\f" ) ;                              // Select new page if NEXTION 
   #endif
   return ( localAP == false ) ;                         // Return result of connection
@@ -4429,23 +4429,23 @@ void playtask ( void * parameter )
 //**************************************************************************************************
 void playtask ( void * parameter )
 {
-  esp_err_t      pinss_err = ESP_FAIL ;                             // Result of i2s_set_pin
-  i2s_port_t     i2s_num = I2S_NUM_0 ;                              // i2S port number
+  esp_err_t      pinss_err = ESP_FAIL ;                              // Result of i2s_set_pin
+  i2s_port_t     i2s_num = I2S_NUM_0 ;                               // i2S port number
   i2s_config_t   i2s_config =
   {
-     .mode                 = (i2s_mode_t)(I2S_MODE_MASTER |         // I2S mode
+     .mode                 = (i2s_mode_t)(I2S_MODE_MASTER |          // I2S mode (5)
                                           I2S_MODE_TX),
      .sample_rate          = 44100,
-     .bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT,
-     .channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT,
-     //.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
-     .communication_format = I2S_COMM_FORMAT_I2S,
-     .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,                  // High interrupt priority
+     .bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT,              // (16)
+     .channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT,             // (0)
+//     .communication_format = I2S_COMM_FORMAT_STAND_I2S,              // (1)
+     .communication_format = I2S_COMM_FORMAT_I2S ,                   // I2S_COMM_FORMAT_STAND_I2S
+     .intr_alloc_flags     = 0,                                      // Default interrupt priority
      .dma_buf_count        = 8,
      .dma_buf_len          = 256,
-     .use_apll             = 0,
-     .tx_desc_auto_clear   = true,                                  // clear tx descriptor on underflow
-     .fixed_mclk           = I2S_PIN_NO_CHANGE,                     // No pin for MCLK
+     .use_apll             = false,
+     .tx_desc_auto_clear   = true,                                   // clear tx descriptor on underflow
+     //.fixed_mclk           = I2S_PIN_NO_CHANGE,                    // No pin for MCLK
   } ;
   #ifndef DEC_HELIX_INT
     i2s_pin_config_t pin_config =
@@ -4453,17 +4453,17 @@ void playtask ( void * parameter )
         .bck_io_num            = ini_block.i2s_bck_pin,             // This is BCK pin
         .ws_io_num             = ini_block.i2s_lck_pin,             // This is L(R)CK pin
         .data_out_num          = ini_block.i2s_din_pin,             // This is DATA output pin
-        .data_in_num           = -1                                 // No input
+        .data_in_num           = I2S_PIN_NO_CHANGE                  // No input
     } ;
   #endif
   dbgprint ( "Starting I2S playtask.." ) ;
   MP3Decoder_AllocateBuffers() ;                                    // Init HELIX buffers
   AACDecoder_AllocateBuffers() ;                                    // Init HELIX buffers
   #ifdef DEC_HELIX_INT                                              // Use internal (8 bit) DAC?
-    i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER |                // Yes, set I2S mode
-                                   I2S_MODE_TX |
-                                   I2S_MODE_DAC_BUILT_IN ) ;        // Enable internal DAC
-    i2s_config.communication_format = I2S_COMM_FORMAT_I2S_MSB ;     // Only use MSB part
+    i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER |                // Yes, set I2S mode (1)
+                                   I2S_MODE_TX |                    // (4)
+                                   I2S_MODE_DAC_BUILT_IN ) ;        // Enable internal DAC (16)
+    i2s_config.communication_format = I2S_COMM_FORMAT_I2S_MSB ;     // Only use MSB part (2)
   #endif
   if ( i2s_driver_install ( i2s_num, &i2s_config, 0, NULL ) != ESP_OK )
   {
@@ -4493,7 +4493,7 @@ void playtask ( void * parameter )
     }
   }
   #ifdef DEC_HELIX_INT                                             // Use internal (8 bit) DAC?
-    i2s_set_dac_mode ( I2S_DAC_CHANNEL_BOTH_EN ) ;                 // Enable DACs
+    //i2s_set_dac_mode ( I2S_DAC_CHANNEL_BOTH_EN ) ;                 // Enable DACs
   #endif
   while ( true )
   {
