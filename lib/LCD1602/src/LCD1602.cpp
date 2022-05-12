@@ -2,7 +2,9 @@
 //*  LCD1602.h -- Driver for LCD 1602 display with I2C backpack.                                    *
 //***************************************************************************************************
 // The backpack communicates with the I2C bus and converts the serial data to parallel for the      *
-// 1602 board.  In the serial data, the 8 bits are assigned as follows:                             *
+// 1602 board.                                                                                      *
+// Do not forget the PULL-UP resistors (4.7k on both SDA and CLK).                                  *
+// In the serial data, the 8 bits are assigned as follows:                                          *
 // Bit   Destination  Description                                                                   *
 // ---   -----------  ------------------------------------                                          *
 //  0    RS           H=data, L=command                                                             *
@@ -17,6 +19,7 @@
 //
 // Note that the display function are limited due to the minimal available space.
 
+#include <Wire.h>
 #include "LCD1602.h"
 
 char*       dbgprint ( const char* format, ... ) ;          // Print a formatted debug line
@@ -77,20 +80,9 @@ void LCD1602::strobe ( uint8_t cmd )
 //***********************************************************************************************
 void LCD1602::scommand ( uint8_t cmd )
 {
-  hnd = i2c_cmd_link_create() ;                           // Create a link
-  if ( i2c_master_start ( hnd ) |
-       i2c_master_write_byte ( hnd, (I2C_ADDRESS << 1) |  // Add I2C address to output buffer
-                                    I2C_MASTER_WRITE,
-                               ACKENA ) |
-       i2c_master_write_byte ( hnd, cmd | bl,             // Add command including BL state
-                               ACKENA ) |
-       i2c_master_stop ( hnd ) |                          // End of data for I2C
-       i2c_master_cmd_begin ( I2C_NUM_0, hnd,             // Send bufferd data to LCD
-                              10 / portTICK_PERIOD_MS ) )
-  {
-    dbgprint ( "LCD1602 communication error!" ) ;         // Something went wrong (not connected)
-  }
-  i2c_cmd_link_delete ( hnd ) ;                           // Link not needed anymore
+  Wire.beginTransmission ( LCD_I2C_ADDRESS ) ;
+  Wire.write ( cmd | bl ) ;                               // Add command including BL state
+  Wire.endTransmission() ;
 }
 
 
@@ -193,26 +185,56 @@ void LCD1602::reset()
 }
 
 
+//**************************************************************************************************
+//                                          I 2 C S C A N                                          *
+//**************************************************************************************************
+// Utility to scan the I2C bus.                                                                    *
+//**************************************************************************************************
+// void i2cscan()
+// {
+//   byte error, address ;
+
+//   dbgprint ( "Scanning I2C bus..." ) ;
+
+//   for ( address = 1 ; address < 127 ; address++ ) 
+//   {
+//     Wire.beginTransmission ( address ) ;
+//     error = Wire.endTransmission() ;
+//     if ( error == 0 )
+//     {
+//       dbgprint ( "I2C device 0x%02X found", address ) ;
+//     }
+//     else if ( error == 4 ) 
+//     {
+//       dbgprint ( "Error 4 at address 0x%02X", address ) ;
+//     }    
+//   }
+// }
+
+
 //***********************************************************************************************
 //                                L C D 1 6 0 2                                                 *
 //***********************************************************************************************
 // Constructor for the display.                                                                 *
 //***********************************************************************************************
-LCD1602::LCD1602 ( uint8_t sda, uint8_t scl )
+LCD1602::LCD1602 ( int sda, int scl )
 {
-  i2c_config.mode = I2C_MODE_MASTER,
-  i2c_config.sda_io_num = (gpio_num_t)sda ;
-  i2c_config.sda_pullup_en = GPIO_PULLUP_DISABLE ;
-  i2c_config.scl_io_num = (gpio_num_t)scl ;
-  i2c_config.scl_pullup_en = GPIO_PULLUP_DISABLE ;
-  i2c_config.master.clk_speed = 100000 ;
-  if ( i2c_param_config ( I2C_NUM_0, &i2c_config ) != ESP_OK )
+  uint8_t error ;
+
+  if ( ! Wire.begin ( sda, scl ) )                             // Init I2c
   {
-    dbgprint ( "param_config error!" ) ;
+    dbgprint ( "I2C driver install error!" ) ;
   }
-  else if ( i2c_driver_install ( I2C_NUM_0, I2C_MODE_MASTER, 0, 0, 0 ) != ESP_OK )
+  else
   {
-    dbgprint ( "driver_install error!" ) ;
+    // i2cscan() ;                                               // Scan I2C bus
+    Wire.beginTransmission ( LCD_I2C_ADDRESS ) ;
+    error = Wire.endTransmission() ;
+    if ( error )
+    {
+      dbgprint ( "Display not found on I2C 0x%02X",
+                  LCD_I2C_ADDRESS ) ;
+    }    
   }
   reset() ;
 }
@@ -229,7 +251,7 @@ dsp_str dline[2] = { { "", 0, 0, 0 },
                      { "", 0, 0, 0 }
                    } ;
 
-bool LCD1602_dsp_begin ( uint8_t sda, uint8_t scl )
+bool LCD1602_dsp_begin ( int sda, int scl )
 {
   dbgprint ( "Init LCD1602, I2C pins %d,%d", sda, scl ) ;
   if ( ( sda >= 0 ) && ( scl >= 0 ) )
