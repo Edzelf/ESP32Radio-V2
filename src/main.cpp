@@ -82,11 +82,11 @@
 // 14-04-2022, ES: Added posibility for a fixed WiFi network.
 // 15-04-2022, ES: Redesigned station selection.
 // 25-04-2022, ES: Support for WT32-ETH01 (wired Ethernet).
-// 12-05-2022, ES: Correction I2S settings.
+// 13-05-2022, ES: Correction I2S settings.
 //
 // Define the version number, also used for webserver as Last-Modified header and to
 // check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Thu, 05 May 2022 09:25:00 GMT"
+#define VERSION     "Fri, 13 May 2022 07:10:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include <WiFi.h>
@@ -4430,46 +4430,39 @@ void playtask ( void * parameter )
 //**************************************************************************************************
 void playtask ( void * parameter )
 {
-  esp_err_t      pinss_err = ESP_FAIL ;                              // Result of i2s_set_pin
-  i2s_port_t     i2s_num = I2S_NUM_0 ;                               // i2S port number
-  i2s_config_t   i2s_config =
-  {
-     .mode                 = (i2s_mode_t)(I2S_MODE_MASTER |          // I2S mode (5)
-                                          I2S_MODE_TX),
-     .sample_rate          = 44100,
-     .bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT,              // (16)
-     .channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT,             // (0)
-     .communication_format = I2S_COMM_FORMAT_STAND_I2S,              // (1)
-//   .communication_format = I2S_COMM_FORMAT_I2S ,                   // I2S_COMM_FORMAT_STAND_I2S
-     .intr_alloc_flags     = 0,                                      // Default interrupt priority
-     .dma_buf_count        = 8,
-     .dma_buf_len          = 256,
-     .use_apll             = false,
-     .tx_desc_auto_clear   = true,                                   // clear tx descriptor on underflow
-     .fixed_mclk           = I2S_PIN_NO_CHANGE,                      // No pin for MCLK
-     .mclk_multiple        = (i2s_mclk_multiple_t)0,
-     .bits_per_chan        = (i2s_bits_per_chan_t)0
-  } ;
-  #ifndef DEC_HELIX_INT
-    i2s_pin_config_t pin_config =
-    {
-        .mck_io_num            = I2S_PIN_NO_CHANGE,                 // MCK not used
-        .bck_io_num            = ini_block.i2s_bck_pin,             // This is BCK pin
-        .ws_io_num             = ini_block.i2s_lck_pin,             // This is L(R)CK pin
-        .data_out_num          = ini_block.i2s_din_pin,             // This is DATA output pin
-        .data_in_num           = I2S_PIN_NO_CHANGE                  // No input
-    } ;
+  esp_err_t        pinss_err = ESP_FAIL ;                            // Result of i2s_set_pin
+  i2s_port_t       i2s_num = I2S_NUM_0 ;                             // i2S port number
+  i2s_config_t     i2s_config ;                                      // I2S configuration
+
+  i2s_config.mode                   = (i2s_mode_t)(I2S_MODE_MASTER | // I2S mode (5)
+                                          I2S_MODE_TX) ;
+  i2s_config.sample_rate            = 44100 ;
+  i2s_config.bits_per_sample        = I2S_BITS_PER_SAMPLE_16BIT ;    // (16)
+  i2s_config.channel_format         = I2S_CHANNEL_FMT_RIGHT_LEFT ;   // (0)
+  #if ESP_ARDUINO_VERSION_MAJOR >= 2                                 // New version?
+    i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2S ;    // Yes, use new definition
+  #else
+    i2s_config.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB) ;
+  #endif
+  i2s_config.intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1 ;         // High interrupt priority
+  i2s_config.dma_buf_count        = 16,
+  i2s_config.dma_buf_len          = 256,
+  i2s_config.use_apll             = false ;
+  i2s_config.tx_desc_auto_clear   = true ;                         // clear tx descriptor on underflow
+  i2s_config.fixed_mclk           = I2S_PIN_NO_CHANGE ;            // No pin for MCLK
+  //i2s_config.mclk_multiple        = (i2s_mclk_multiple_t)0 ;
+  //i2s_config.bits_per_chan        = (i2s_bits_per_chan_t)0 ;
+  #ifdef DEC_HELIX_INT
+    i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER |               // Set I2S mode for internal DAC
+                                   I2S_MODE_TX |                   // (4)
+                                   I2S_MODE_DAC_BUILT_IN ) ;       // Enable internal DAC (16)
+    #if ESP_ARDUINO_VERSION_MAJOR < 2
+      i2s_config.communication_format = I2S_COMM_FORMAT_I2S_MSB ;
+    #endif
   #endif
   dbgprint ( "Starting I2S playtask.." ) ;
-  MP3Decoder_AllocateBuffers() ;                                    // Init HELIX buffers
-  AACDecoder_AllocateBuffers() ;                                    // Init HELIX buffers
-  #ifdef DEC_HELIX_INT                                              // Use internal (8 bit) DAC?
-    i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER |                // Yes, set I2S mode (1)
-                                   I2S_MODE_TX |                    // (4)
-                                   I2S_MODE_DAC_BUILT_IN ) ;        // Enable internal DAC (16)
-    //i2s_config.communication_format = I2S_COMM_FORMAT_I2S_MSB ;     // Only use MSB part (2)
-    //i2s_config.communication_format = (i2s_comm_format_t) 2 ;
-  #endif
+  MP3Decoder_AllocateBuffers() ;                                   // Init HELIX buffers
+  AACDecoder_AllocateBuffers() ;                                   // Init HELIX buffers
   if ( i2s_driver_install ( i2s_num, &i2s_config, 0, NULL ) != ESP_OK )
   {
     dbgprint ( "I2S install error!" ) ;
@@ -4477,7 +4470,16 @@ void playtask ( void * parameter )
   #ifdef DEC_HELIX_INT                                             // Use internal (8 bit) DAC?
     dbgprint ( "Output to internal DAC" ) ;                        // Show output device
     pinss_err = i2s_set_pin ( i2s_num, NULL ) ;                    // Yes, default pins for internal DAC
+    i2s_set_dac_mode ( I2S_DAC_CHANNEL_BOTH_EN ) ;
   #else
+    i2s_pin_config_t pin_config ;                                  // I2s pin config
+    pin_config.bck_io_num    = ini_block.i2s_bck_pin ;             // This is BCK pin
+    pin_config.ws_io_num     = ini_block.i2s_lck_pin ;             // This is L(R)CK pin
+    pin_config.data_out_num  = ini_block.i2s_din_pin ;             // This is DATA output pin
+    pin_config.data_in_num   = I2S_PIN_NO_CHANGE ;                 // No input
+    #if ESP_ARDUINO_VERSION_MAJOR >= 2
+      pin_config.mck_io_num    = I2S_PIN_NO_CHANGE ;               // MCK not used
+    #endif
     dbgprint ( "Output to I2S, pins %d, %d and %d",                // Show pins used for output device
                pin_config.bck_io_num,                              // This is the BCK (bit clock) pin
                pin_config.ws_io_num,                               // This is L(R)CK pin
@@ -4489,6 +4491,7 @@ void playtask ( void * parameter )
       pinss_err = i2s_set_pin ( i2s_num, &pin_config ) ;           // Set I2S pins
     }
   #endif
+  i2s_zero_dma_buffer ( i2s_num ) ;                                // Zero the buffer
   if ( pinss_err != ESP_OK )                                       // Check error condition
   {
     dbgprint ( "I2S setpin error!" ) ;                             // Rport bad pis
@@ -4497,9 +4500,6 @@ void playtask ( void * parameter )
       xQueueReceive ( dataqueue, &inchunk, 500 ) ;                 // Ignore all chunk from queue
     }
   }
-  #ifdef DEC_HELIX_INT                                             // Use internal (8 bit) DAC?
-    //i2s_set_dac_mode ( I2S_DAC_CHANNEL_BOTH_EN ) ;                 // Enable DACs
-  #endif
   while ( true )
   {
     if ( xQueueReceive ( dataqueue, &inchunk, 500 ) )               // Get next chunk from queue
