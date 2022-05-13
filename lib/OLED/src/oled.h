@@ -61,7 +61,7 @@ struct scrseg_struct                               // For screen segments
 class OLED
 {
   public:
-    OLED    ( uint8_t sda, uint8_t scl ) ;            // Constructor
+    OLED    ( int sda, int scl ) ;                    // Constructor
     void      clear() ;                               // Clear buffer
     void      display() ;                             // Display buffer
     void      print ( char c ) ;                      // Print a character
