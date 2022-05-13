@@ -15,7 +15,6 @@
 //#define DEC_HELIX                                       // Software decoder for MP3, AAC. I2S output
 //#define DEC_HELIX_INT                                   // Software decoder for MP3, AAC. DAC output
                                                           // Needs platform = espressif32@3.1.0 !!!!
-                                                          // Plus some changes in the I2S configuration
 
 // Define (just one) type of display.  See documentation.
 #define BLUETFT                                           // Works also for RED TFT 128x160
@@ -32,4 +31,13 @@
 
 // Define ZIPPYB5 if a ZIPPY B5 Side Switch is used instead of a rotary switch
 ///#define ZIPPYB5
+
+// End of configuration parameters.
+
+// DEC_HELIX_INT does not seem to work with higher versions of framework.  Do a test.
+#ifdef DEC_HELIX_INT
+  #if ESP_ARDUINO_VERSION_MAJOR >= 2
+    #error Internal DAC will not work in this version of the platform.  Use espressif32@3.1.0.
+  #endif
+#endif
 
