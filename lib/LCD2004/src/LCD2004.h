@@ -100,7 +100,7 @@ extern scrseg_struct     LCD2004_tftdata[TFTSECS] ;                // Screen div
 class LCD2004
 {
   public:
-                     LCD2004 ( int sda, int scl ) ;         // Constructor
+                     LCD2004 ( int8_t sda, int8_t scl ) ;   // Constructor
     void             print ( char c ) ;                     // Send 1 char
     void             reset() ;                              // Perform reset
     void             sclear() ;                             // Clear the screen
@@ -123,7 +123,7 @@ extern LCD2004* LCD2004_tft ;
 void LCD2004_displaybattery ( uint16_t bat0, uint16_t bat100, uint16_t adcval ) ;
 void LCD2004_displayvolume  ( uint8_t vol ) ;
 void LCD2004_displaytime    ( const char* str, uint16_t color = 0xFFFF ) ;
-bool LCD2004_dsp_begin      ( int sda, int scl ) ;
+bool LCD2004_dsp_begin      ( int8_t sda, int8_t scl ) ;
 void LCD2004_dsp_update     ( bool isvolume ) ;
 
 #endif

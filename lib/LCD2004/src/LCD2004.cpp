@@ -42,7 +42,7 @@ scrseg_struct     LCD2004_tftdata[TFTSECS] =                // Screen divided in
 
 LCD2004* LCD2004_tft = NULL ;
 
-bool LCD2004_dsp_begin (  int sda, int scl  )
+bool LCD2004_dsp_begin (  int8_t sda, int8_t scl  )
 {
   dbgprint ( "Init LCD2004, I2C pins %d,%d", sda, scl ) ;
   if ( ( sda >= 0 ) && ( scl >= 0 ) )
@@ -243,7 +243,7 @@ void LCD2004::reset()
 //***********************************************************************************************
 // Constructor for the display.                                                                 *
 //***********************************************************************************************
-LCD2004::LCD2004 ( int sda, int scl )
+LCD2004::LCD2004 ( int8_t sda, int8_t scl )
 {
   uint8_t error ;
 
