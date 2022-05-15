@@ -16,7 +16,7 @@ scrseg_struct        ST7789_tftdata[TFTSECS] =             // Screen divided in 
                       } ;
 
 
-bool ST7789_dsp_begin ( uint8_t cs, uint8_t dc )
+bool ST7789_dsp_begin ( int8_t cs, int8_t dc )
 {
   if ( ( ST7789_tft = new Adafruit_ST7789 ( cs, dc , -1 ) ) )      // Create an instant for TFT
   {

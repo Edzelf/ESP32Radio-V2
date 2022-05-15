@@ -68,5 +68,5 @@ extern scrseg_struct     ST7789_tftdata[TFTSECS] ;                   // Screen d
 void ST7789_displaybattery ( uint16_t bat0, uint16_t bat100, uint16_t adcval ) ;
 void ST7789_displayvolume  ( uint8_t vol ) ;
 void ST7789_displaytime    ( const char* str, uint16_t color = BLUE ) ;
-bool ST7789_dsp_begin      ( uint8_t cs, uint8_t dc ) ;
+bool ST7789_dsp_begin      ( int8_t cs, int8_t dc ) ;
 #endif
