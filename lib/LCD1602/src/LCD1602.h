@@ -103,13 +103,13 @@ extern scrseg_struct LCD1602_tftdata[TFTSECS] ;
 void LCD1602_displaybattery ( uint16_t bat0, uint16_t bat100, uint16_t adcval ) ;
 void LCD1602_displayvolume  ( uint8_t vol ) ;
 void LCD1602_displaytime    ( const char* str, uint16_t color = 0xFFFF ) ;
-bool LCD1602_dsp_begin      ( int sda, int scl ) ;
+bool LCD1602_dsp_begin      ( int8_t sda, int8_t scl ) ;
 void LCD1602_dsp_update     ( bool isvolume ) ;
 
 class LCD1602
 {
   public:
-                     LCD1602 ( int sda, int scl ) ;         // Constructor
+                     LCD1602 ( int8_t sda, int8_t scl ) ;   // Constructor
     void             print ( char c ) ;                     // Send 1 char
     void             reset() ;                              // Perform reset
     void             sclear() ;                             // Clear the screen

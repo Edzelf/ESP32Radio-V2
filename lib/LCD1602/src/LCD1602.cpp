@@ -217,7 +217,7 @@ void LCD1602::reset()
 //***********************************************************************************************
 // Constructor for the display.                                                                 *
 //***********************************************************************************************
-LCD1602::LCD1602 ( int sda, int scl )
+LCD1602::LCD1602 ( int8_t sda, int8_t scl )
 {
   uint8_t error ;
 
@@ -251,7 +251,7 @@ dsp_str dline[2] = { { "", 0, 0, 0 },
                      { "", 0, 0, 0 }
                    } ;
 
-bool LCD1602_dsp_begin ( int sda, int scl )
+bool LCD1602_dsp_begin ( int8_t sda, int8_t scl )
 {
   dbgprint ( "Init LCD1602, I2C pins %d,%d", sda, scl ) ;
   if ( ( sda >= 0 ) && ( scl >= 0 ) )
