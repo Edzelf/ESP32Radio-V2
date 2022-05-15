@@ -71,5 +71,5 @@ extern scrseg_struct     bluetft_tftdata[TFTSECS] ;                       // Scr
 void bluetft_displaybattery ( uint16_t bat0, uint16_t bat100, uint16_t adcval ) ;
 void bluetft_displayvolume  ( uint8_t vol ) ;
 void bluetft_displaytime    ( const char* str, uint16_t color = 0xFFFF ) ;
-bool bluetft_dsp_begin      ( uint8_t cs, uint8_t dc ) ;
+bool bluetft_dsp_begin      ( int8_t cs, int8_t dc ) ;
 #endif

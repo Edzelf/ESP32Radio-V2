@@ -19,7 +19,7 @@ scrseg_struct        bluetft_tftdata[TFTSECS] =             // Screen divided in
                       } ;
 
 
-bool bluetft_dsp_begin ( uint8_t cs, uint8_t dc )
+bool bluetft_dsp_begin ( int8_t cs, int8_t dc )
 {
   if ( ( bluetft_tft = new Adafruit_ST7735 ( cs, dc , -1 ) ) )      // Create an instant for TFT
   {
