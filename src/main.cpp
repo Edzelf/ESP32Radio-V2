@@ -83,10 +83,10 @@
 // 15-04-2022, ES: Redesigned station selection.
 // 25-04-2022, ES: Support for WT32-ETH01 (wired Ethernet).
 // 13-05-2022, ES: Correction I2S settings.
+// 15-05-2022, ES: Correction mp3 list for web interface.
 //
-// Define the version number, also used for webserver as Last-Modified header and to
-// check version for update.  The format must be exactly as specified by the HTTP standard!
-#define VERSION     "Fri, 13 May 2022 07:10:00 GMT"
+// Define the version number, the format used isspecified by the HTTP standard.
+#define VERSION     "Sun, 15 May 2022 10:30:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include <WiFi.h>
@@ -339,7 +339,6 @@ int               metaint = 0 ;                          // Number of databytes 
 bool              reqtone = false ;                      // New tone setting requested
 bool              muteflag = false ;                     // Mute output
 bool              resetreq = false ;                     // Request to reset the ESP32
-bool              updatereq = false ;                    // Request to update software from remote host
 bool              testreq = false ;                      // Request to print test info
 bool              eth_connected = false ;                // Ethernet connected or not
 bool              NetworkFound = false ;                 // True if WiFi network connected
@@ -350,9 +349,6 @@ int8_t            playingstat = 0 ;                      // 1 if radio is playin
 int16_t           playlist_num = 0 ;                     // Nonzero for selection from playlist
 bool              chunked = false ;                      // Station provides chunked transfer
 int               chunkcount = 0 ;                       // Counter for chunked transfer
-String            http_getcmd ;                          // Contents of last GET command
-String            http_rqfile ;                          // Requested file
-bool              http_response_flag = false ;           // Response required
 uint16_t          ir_value = 0 ;                         // IR code
 uint32_t          ir_0 = 550 ;                           // Average duration of an IR short pulse
 uint32_t          ir_1 = 1650 ;                          // Average duration of an IR long pulse
@@ -2913,30 +2909,40 @@ void writeprefs ( AsyncWebServerRequest *request )
 //**************************************************************************************************
 size_t cb_mp3list ( uint8_t *buffer, size_t maxLen, size_t index )
 {
-  static int   i ;                                    // Index in track list
-  size_t       len = 0 ;                              // Number of bytes filled in buffer
-  uint16_t     slen ;                                 // Length of filespec
-  char*        p = (char*)buffer ;                    // Treat as pointer to aray of char
+  static int         i ;                              // Index in track list
+  static const char* path ;                           // Pointer in file path
+  size_t             len = 0 ;                        // Number of bytes filled in buffer
+  char*              p = (char*)buffer ;              // Treat as pointer to aray of char
 
   if ( index == 0 )                                   // First call for this page?
   {
     i = 0 ;                                           // Yes, set index (track number)
+    path = "" ;                                       // Force read of next path 
   }
-  while ( maxLen > ( sizeof(SD_lastmp3spec) + 2 ) )   // Space for another filespec?
+  while ( maxLen > len )                              // Space for another char from path?
   {
-    if ( i >= SD_filecount )                          // Beyond end of list?
+    if ( *path )                                      // End of path?
     {
-      break ;                                         // Yes, stop
+      *p++ = *path++ ;                                // No, add another character to send buffer
     }
-    strcpy ( p, getSDFileName ( i++ ) ) ;             // Add next full file spec
-    strcat ( p, "\n" ) ;                              // Separator
-    slen =strlen ( p ) ;                              // Length of filespec including separator
-    p += slen ;                                       // Move pointer
-    len += slen ;                                     // Set new tatal length
-    maxLen -= slen ;                                  // Set new free space
-    delay ( 2 ) ;                                     // Allow other tasks
+    else
+    {
+      // End of path
+      if ( i )                                        // At least one path in output?
+      {
+        *p++ = '\n' ;                                 // Yes, add separator
+      }
+      if ( i >= SD_filecount )                        // Yes, beyond end of list?
+      {
+        //dbgprint ( "End of list" ) ;
+        break ;                                       // Yes, stop
+      }
+      path = getSDFileName ( i++ ) ;                  // Get next path from list
+    }
+    len++ ;                                           // Update total length
   }
-  // We come here if output buffer is completely full or if end of tracklist is reached
+  // We come here if output buffer is completely full or end of tracklist is reached
+  //dbgprint ( "i is %d/%d, len %d", i, SD_filecount, len ) ;
   return len ;                                        // Return filled length of buffer
 }
 
@@ -3250,7 +3256,7 @@ void chk_enc()
   {
     return ;                                                  // No, return
   }
-  dbgprint ( "Rotation count %d", rotationcount ) ;
+  //dbgprint ( "Rotation count %d", rotationcount ) ;
   switch ( enc_menu_mode )                                    // Which mode (VOLUME, PRESET, TRACK)?
   {
     case VOLUME :
@@ -3437,10 +3443,6 @@ void radiofuncs()
 //**************************************************************************************************
 void loop()
 {
-  if ( updatereq )                                  // Software update requested?
-  {
-    resetreq = true ;                               // And reset
-  }
   if ( resetreq )                                   // Reset requested?
   {
     delay ( 1000 ) ;                                // Yes, wait some time
@@ -4162,10 +4164,6 @@ const char* analyzeCmd ( const char* par, const char* val )
   else if ( argument == "reset" )                     // Reset request
   {
     resetreq = true ;                                 // Reset all
-  }
-  else if ( argument.startsWith ( "update" ) )        // Update request
-  {
-    updatereq = true ;                                // Reset all
   }
   else if ( argument == "test" )                      // Test command
   {
