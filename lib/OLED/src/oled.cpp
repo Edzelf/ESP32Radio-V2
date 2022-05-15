@@ -28,7 +28,7 @@ scrseg_struct OLED_tftdata[TFTSECS] =                 // Screen divided in 3 seg
 //***********************************************************************************************
 // Init display.                                                                                *
 //***********************************************************************************************
-bool oled_dsp_begin ( uint8_t sda_pin, uint8_t scl_pin, uint16_t olt )
+bool oled_dsp_begin ( int8_t sda_pin, int8_t scl_pin, uint16_t olt )
 {
   oledtyp = olt ;                                  // Save OLED type
   dbgprint ( "Init OLED %d, I2C pins %d,%d",
@@ -90,47 +90,6 @@ void OLED::print ( const char* str )
   }
 }
 
-#ifdef EXCLUDEDDRAWBITMAP
-//***********************************************************************************************
-//                              O L E D :: D R A W B I T M A P                                  *
-//***********************************************************************************************
-// Copy a bitmap to the display buffer.                                                         *
-//***********************************************************************************************
-void OLED::drawBitmap ( uint8_t x, uint8_t y, uint8_t* buf, uint8_t w, uint8_t h )
-{
-  uint8_t  pg ;                                           // Page to fill
-  uint8_t  pat ;                                          // Fill pattern
-  uint8_t  xc, yc ;                                       // Running x and y in rectangle
-  uint8_t* p ;                                            // Point into ssdbuf
-  uint8_t* s = buf ;                                      // Byte in input buffer
-  uint8_t  m = 0x80 ;                                     // Mask in input buffer
-  
-  for ( yc = y ; yc < ( y + h ) ; yc++ )                  // Loop vertically
-  {
-    pg = ( yc / 8 ) % OLED_NPAG ;                         // Page involved
-    pat = 1 << ( yc & 7 ) ;                               // Bit involved
-    p = ssdbuf[pg].page + x ;                             // Point to right place
-    for ( xc = x ; xc < ( x + w ) ; xc++ )                // Loop horizontally
-    {
-      if ( *s & m )                                       // Set bit?
-      {
-        *p |= pat ;                                       // Yes, set bit
-      }
-      else
-      {
-        *p &= ~pat ;                                      // No, clear bit
-      }
-      p++ ;                                               // Next 8 pixels
-      if ( ( m >>= 1 ) == 0 )                             // Shift input mask
-      {
-        m = 0x80 ;                                        // New byte
-        s++ ;
-      }
-    }
-    ssdbuf[pg].dirty = true ;                             // Page has been changed
-  }
-}
-#endif
 
 //***********************************************************************************************
 //                                O L E D :: D I S P L A Y                                   *
@@ -249,7 +208,7 @@ void OLED::fillRect ( uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint8_t color 
 //***********************************************************************************************
 // Constructor for the display.                                                                 *
 //***********************************************************************************************
-OLED::OLED ( int sda, int scl )
+OLED::OLED ( int8_t sda, int8_t scl )
 {
   uint8_t      initbuf[] =                                   // Initial commands to init OLED
                   {

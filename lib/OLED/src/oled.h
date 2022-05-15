@@ -61,7 +61,7 @@ struct scrseg_struct                               // For screen segments
 class OLED
 {
   public:
-    OLED    ( int sda, int scl ) ;                    // Constructor
+    OLED    ( int8_t sda, int8_t scl ) ;              // Constructor
     void      clear() ;                               // Clear buffer
     void      display() ;                             // Display buffer
     void      print ( char c ) ;                      // Print a character
@@ -70,10 +70,6 @@ class OLED
     void      fillRect ( uint8_t x, uint8_t y,        // Fill a rectangle
                          uint8_t w, uint8_t h,
                          uint8_t color ) ;
-    //void      drawBitmap ( uint8_t x, uint8_t y,      // Bitmap to display buffer
-    //                       uint8_t* buf,
-    //                       uint8_t w,
-    //                       uint8_t h ) ;        
   private:
     struct page_struct*     ssdbuf = NULL ;
     const  uint8_t*         font ;                    // Font to use
@@ -111,7 +107,7 @@ extern scrseg_struct OLED_tftdata[TFTSECS] ;          // Screen divided in segme
 
 void oled_displaybattery ( uint16_t bat0, uint16_t bat100, uint16_t adcval ) ;
 void oled_displaytime ( const char* str, uint16_t color = 0xFFFF ) ;
-bool oled_dsp_begin ( uint8_t sda_pin, uint8_t scl_pin, uint16_t olt ) ;
+bool oled_dsp_begin ( int8_t sda_pin, int8_t scl_pin, uint16_t olt ) ;
 void oled_displayvolume  ( uint8_t vol ) ;
 
 // Control byte
