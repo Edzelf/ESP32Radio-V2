@@ -70,6 +70,6 @@ extern scrseg_struct     ILI9341_tftdata[TFTSECS] ;                       // Scr
 void ILI9341_displaybattery ( uint16_t bat0, uint16_t bat100, uint16_t adcval ) ;
 void ILI9341_displayvolume  ( uint8_t vol ) ;
 void ILI9341_displaytime    ( const char* str, uint16_t color = 0xFFFF ) ;
-bool ILI9341_dsp_begin      ( uint8_t cs, uint8_t dc ) ;
+bool ILI9341_dsp_begin      ( int8_t cs, int8_t dc ) ;
 
 #endif

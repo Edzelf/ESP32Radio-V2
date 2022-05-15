@@ -23,7 +23,7 @@ scrseg_struct     ILI9341_tftdata[TFTSECS] =                        // Screen di
 Adafruit_ILI9341*     ILI9341_tft ;                                       // For instance of display driver
 
 
-bool ILI9341_dsp_begin ( uint8_t cs, uint8_t dc )
+bool ILI9341_dsp_begin ( int8_t cs, int8_t dc )
 {
   if ( ( ILI9341_tft = new Adafruit_ILI9341 ( cs, dc ) ) )                // Create an instance for TFT
   {
