@@ -1,7 +1,9 @@
 // SDcard.h
 // Includes for SD card interface
 //
-
+#if ESP_ARDUINO_VERSION_MAJOR < 2                     // File function "path()" not available in older versions
+  #define path() name()                               // Use "name()" instead
+#endif
 #define MAXFNLEN    512                               // Max length of a full filespec
 #define MAXSPACE    40000                             // Max space for filenames (bytes, not tracks).
                                                       // Approx. 36 tracks per kB
@@ -250,6 +252,7 @@ struct mp3spec_t                                      // For List of mp3 file on
     File       root ;                                     // Work directory
     File       file ;                                     // File in work directory
 
+    //dbgprint ( "getsdt dir is %s", dirname ) ;
     claimSPI ( "sdopen1" ) ;                              // Claim SPI bus
     root = SD.open ( dirname ) ;                          // Open directory
     releaseSPI() ;                                        // Release SPI bus
@@ -270,12 +273,12 @@ struct mp3spec_t                                      // For List of mp3 file on
     {
       if ( file.isDirectory() )                           // Is it a directory?
       {
-        //dbgprint ( "  DIR : %s", file.name() ) ;
+        //dbgprint ( "  DIR : %s", file.path() ) ;
         if ( levels )                                     // Dig in subdirectory?
         {
-          if ( strrchr ( file.name(), '/' )[1] != '.' )   // Skip hidden directories
+          if ( strrchr ( file.path(), '/' )[1] != '.' )   // Skip hidden directories
           {
-            getsdtracks ( file.name(), levels -1 ) ;      // Non hidden directory: call recursive
+            getsdtracks ( file.path(), levels -1 ) ;      // Non hidden directory: call recursive
           }
         }
       }
@@ -286,7 +289,7 @@ struct mp3spec_t                                      // For List of mp3 file on
         if ( ( strcmp ( ext, ".MP3" ) == 0 ) ||           // It is a file, but is it an MP3?
             ( strcmp ( ext, ".mp3" ) == 0 ) )
         {
-          if ( ! addToFileList ( file.name() ) )          // Add file to the list
+          if ( ! addToFileList ( file.path() ) )          // Add file to the list
           {
             break ;                                       // No need to continue
           }

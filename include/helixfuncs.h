@@ -49,18 +49,20 @@ int16_t player_getVolume()
 //**************************************************************************************************
 void helixInit ( uint8_t enable_pin, uint8_t disable_pin )
 {
-  dbgprint ( "helixInit called for %s",               // Show activity
-             audio_ct.c_str() ) ;
+  dbgprint ( "helixInit called for %s, e is %d, "     // Show activity
+             "d is %d",
+             audio_ct.c_str(),
+             enable_pin, disable_pin ) ;
   mp3mode = ( audio_ct.indexOf ( "mpeg" ) > 0 ) ;     // Set mp3/aac mode
   mp3bpnt = mp3buff ;                                 // Reset pointer
   mp3bcnt = 0 ;                                       // Buffer empty
   searchFrame = true ;                                // Start searching for frame
-  if ( enable_pin >= 0 )                              // Enable pin defined?
+  if ( enable_pin != 0xFF )                           // Enable pin defined?
   {
     pinMode ( enable_pin, OUTPUT ) ;                  // Yes, set pin to output
     digitalWrite ( enable_pin, HIGH ) ;               // Enable output
   }
-  if ( disable_pin >= 0 )                             // Disable pin defined?
+  if ( disable_pin != 0xFF )                          // Disable pin defined?
   {
     pinMode ( disable_pin, OUTPUT ) ;                 // Yes, set pin to output
     digitalWrite ( enable_pin, LOW ) ;                // Enable output
@@ -82,10 +84,11 @@ void playChunk ( i2s_port_t i2s_num, const uint8_t* chunk )
   int             s ;                                 // Position of syncword
   static bool     once ;                              // To execute part of code once
   int             n ;                                 // Number of samples decoded
-  size_t          bw ;                                // I2S bytes written
+
   int             br = 0 ;                            // Bit rate
   int             bps = 0 ;                           // Bits per sample
   int             ops = 0 ;                           // Number of output samples
+  size_t          bw ;                                // Number of bytes written to I2S
 
   memcpy ( mp3bpnt, chunk, 32 ) ;                     // Add chunk to frame buffer
   mp3bcnt += 32 ;                                     // Update counter
