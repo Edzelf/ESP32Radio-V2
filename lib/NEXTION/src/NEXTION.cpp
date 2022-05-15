@@ -29,7 +29,7 @@ void NEXTION_nextioncmd ( const char *cmd )
 }
 
 
-bool NEXTION_dsp_begin ( uint8_t rx, uint8_t tx )
+bool NEXTION_dsp_begin ( int8_t rx, int8_t tx )
 {
   dbgprint ( "Init Nextion, pins %d, %d", INIPARS ) ;
   nxtserial = new HardwareSerial ( 2 ) ;

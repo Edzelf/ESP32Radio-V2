@@ -67,7 +67,7 @@ extern scrseg_struct     tftdata[TFTSECS] ;                 // Screen divided in
 void NEXTION_displaybattery ( uint16_t bat0, uint16_t bat100, uint16_t adcval ) ;
 void NEXTION_displayvolume  ( uint8_t vol ) ;
 void NEXTION_displaytime    ( const char* str, uint16_t color = 0xFFFF ) ;
-bool NEXTION_dsp_begin      ( uint8_t rx, uint8_t tx ) ;
+bool NEXTION_dsp_begin      ( int8_t rx, int8_t tx ) ;
 void NEXTION_dsp_println    ( const char* str ) ;
 void NEXTION_dsp_print      ( const char* str ) ;
 void NEXTION_dsp_update     ( bool a ) ;                    // Updates to the physical screen
