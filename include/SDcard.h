@@ -286,7 +286,7 @@ struct mp3spec_t                                      // For List of mp3 file on
         if ( ( strcmp ( ext, ".MP3" ) == 0 ) ||           // It is a file, but is it an MP3?
             ( strcmp ( ext, ".mp3" ) == 0 ) )
         {
-          if ( ! addToFileList ( file.name() ) )          // Add file to the list
+          if ( ! addToFileList ( file.path() ) )          // Add file to the list
           {
             break ;                                       // No need to continue
           }

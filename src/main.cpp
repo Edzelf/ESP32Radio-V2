@@ -468,6 +468,10 @@ touchpin_struct   touchpin[] =                           // Touch pins and progr
   // End of table
 } ;
 
+#ifdef SDCARD
+  bool         scanned = false ;                             // True if direcetory already scanned
+  bool         sdokay = true ;                               // Assume SD is mounted
+#endif
 //**************************************************************************************************
 // End of global data section.                                                                     *
 //**************************************************************************************************
@@ -2844,7 +2848,11 @@ if ( NetworkFound )
   sdqueue = xQueueCreate ( 10,                            // Create small queue for communication to sdfuncs
                             sizeof ( qdata_type ) ) ;
   tftlog ( "Mount&scan SD card", true ) ;
-  sdfuncs() ;                                             // Mount and scan SD card
+  if(!sdokay)                                                  // Quick return if card is nof okay
+    {
+      dbgprint("Mount SD pin=%d", ini_block.sd_cs_pin);
+      sdokay = mount_SDCARD(ini_block.sd_cs_pin);
+    }
 #endif
   singleclick = false ;                                   // Might be fantom click
   if ( dsp_ok )                                           // Is display okay?
@@ -3175,7 +3183,14 @@ void chk_enc()
       }
       else
       {
+        	if(!sdokay)                                                  // Quick return if card is nof okay
+	  	    {
+	  	     dbgprint("Mount SD pin=%d", ini_block.sd_cs_pin);
+	  	     sdokay = mount_SDCARD(ini_block.sd_cs_pin);
+	  	    }
+	  		  scanned = false;
         dbgprint ( "No tracks on SD" ) ;
+	        tftset(3, "No tracks on SD, Please retry") ;
       }
     #endif
   }
@@ -4550,24 +4565,15 @@ void sdfuncs()
 #ifdef SDCARD
   qdata_type          sdcmd ;                                       // Command from sdqueue
   static bool         openfile = false ;                            // Open input file available
-  static bool         scanned = false ;                             // True if direcetory already scanned
-  static bool         sdokay = true ;                               // Assume SD is mounted
   static bool         autoplay = true ;                             // Play next after end
 
-  if ( ! sdokay )                                                   // Quick return if card is nof okay
-  {
-    return ;
-  }
-  if ( ! scanned )                                                  // SD directory alread scanned?
-  {
-    if ( ( sdokay = mount_SDCARD ( ini_block.sd_cs_pin ) ) )        // Mount possible SD card
+    if(!scanned && sdokay)                                                 // SD directory alread scanned?
     {
       dbgprint ( "SD okay, start scan" ) ;
-      clearFileList() ;                                             // Reserve space for file list
       scan_SDCARD() ;                                               // Scan all directories for MP3 files
       scanned = true ;                                              // Card has been scanned now
     }
-  }
+
   if ( openfile )
   {
     if ( mp3filelength )                                            // Read until eof
