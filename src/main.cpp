@@ -114,6 +114,9 @@
 #include <base64.h>                                       // For Basic authentication
 #include <SPIFFS.h>                                       // Filesystem
 #include "utils.h"                                        // Some handy utilities
+#ifdef KEYPAD
+	#include "keypad.h"
+#endif				   
 #ifdef DEC_HELIX_INT                                      // Software decoder using internal DAC?
   #define DEC_HELIX                                       // Yes, make sure to include software decoders
 #endif
@@ -364,6 +367,19 @@ const char*       fixedwifi = "" ;                       // Used for FIXEDWIFI o
 const esp_partition_t*  spiffs = NULL ;                  // Pointer to SPIFFS partition struct
 std::vector<WifiInfo_t> wifilist ;                       // List with wifi_xx info
 
+#ifdef KEYPAD											// keypad
+	const byte ROWS = 3; //three rows
+	const byte COLS = 3; //three columns
+	char keys[ROWS][COLS] = {
+		{'1','2','3'},
+		{'4','5','6'},
+		{'7','8','9'}
+		};
+		byte rowPins[ROWS] = {12, 13, 14}; //connect to the row pinouts of the kpd
+		byte colPins[COLS] = {25, 26, 27}; //connect to the column pinouts of the kpd
+		
+		Keypad ipdiopad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
+#endif				   		 
 // nvs stuff
 nvs_page                nvsbuf ;                         // Space for 1 page of NVS info
 const esp_partition_t*  nvs ;                            // Pointer to partition struct
@@ -1566,7 +1582,9 @@ bool connectETH()
   }
   pIP = ipaddress.c_str() ;                             // As c-string
   dbgprint ( "IP = %s", pIP ) ;
-  tftlog ( "IP = " ) ;                                  // Show IP
+  #ifndef LCD1602I2C
+  tftlog ( "IP: " ) ;                                  // Show IP
+  #endif
   tftlog ( pIP, true ) ;
   #ifdef NEXTION
     dsp_println ( "\f" ) ;                              // Select new page if NEXTION 
@@ -1627,7 +1645,7 @@ bool connectwifi()
   }
   else
   {
-    tftlog ( "SSID = " ) ;                              // Show SSID on display
+    tftlog ( "SSID: " ) ;                              // Show SSID on display
     tftlog ( WiFi.SSID().c_str(), true ) ;
     dbgprint ( "SSID = %s",                             // Format string with SSID connected to
                       WiFi.SSID().c_str() ) ;
@@ -1635,7 +1653,9 @@ bool connectwifi()
   }
   pIP = ipaddress.c_str() ;                             // As c-string
   dbgprint ( "IP = %s", pIP ) ;
-  tftlog ( "IP = " ) ;                                  // Show IP
+  #ifndef LCD1602I2C                                   // Only IP fits on the 1602LCD
+  tftlog ( "IP: " ) ;                                  // Show IP
+  #endif
   tftlog ( pIP, true ) ;
   #ifdef NEXTION
     delay ( 2000 ) ;                                    // Show for some time
@@ -2157,7 +2177,98 @@ void scanserial2()
 #define scanserial2()                              // Empty version if no NEXTION
 #endif
 
+#ifdef KEYPAD
+//**************************************************************************************************
+//                                     S C A N K E Y P A D                                         *
+//**************************************************************************************************
+// Scan keypad inputs.                                                                             *
+//**************************************************************************************************
+void  scankeypad()
+{
+  //static uint32_t oldmillis = 5000 ;                        // To compare with current time
+  int             i ;                                         // Loop control
+  static bool     EncSwHold = false;
+  //int8_t          pinnr ;                                   // Pin number to check
+  //bool            level ;                                   // Input level
+  const char*     reply ;                                   // Result of analyzeCmd
+  String kpdcmd;
+  //int16_t         tlevel ;                                  // Level found by touch pin
+  //const int16_t   THRESHOLD = 30 ;                          // Threshold or touch pins
+	String msg;
 
+  msg="";
+  kpdcmd="";
+  ipdiopad.setDebounceTime(100);
+	ipdiopad.setHoldTime(2000);
+  //ipdiopad.getKeys();
+  
+  if (ipdiopad.getKeys())
+	{
+    for (i=0; i<LIST_MAX; i++)   // Scan the whole key list.
+		{
+      if ( ipdiopad.key[i].stateChanged )   // Only find keys that have changed state.
+			{
+				switch (ipdiopad.key[i].kstate) {  // Report active key state : IDLE, PRESSED, HOLD, or RELEASED
+				case PRESSED:
+					msg = " PRESSED.";
+          switch (ipdiopad.key[i].kchar) {  // which key is PRESSED ?
+				    case ('1'):                     // Keypad Key 1 Next
+            kpdcmd = "uppreset = 1";
+            break;
+            case ('2'):                     // Keypad Key 2 Prev
+            kpdcmd = "downpreset = 1";
+            break;
+            case ('3'):                     // Keypad Key 3 Play/Pause
+            kpdcmd = "stop";
+            break;
+          }
+          dbgprint ( "Keypad %c pressed, execute %s", ipdiopad.key[i].kchar, kpdcmd ) ; //"uppreset = 1"
+          reply = analyzeCmd ( kpdcmd.c_str() ) ;             // Analyze command and handle it
+					break;
+				//case HOLD:
+				//	msg = " HOLD.";
+				//	break;
+				//case RELEASED:
+				//	msg = " RELEASED.";
+				//	break;
+        //case IDLE:
+				//	msg = " IDLE.";
+				}
+				dbgprint ("Keypad key: %c %s", ipdiopad.key[i].kchar, msg);
+			}
+      if ( ipdiopad.key[i].stateChanged && (ipdiopad.key[i].kchar=='5') )   // rotary encoder switch has changed state?
+			{
+				switch (ipdiopad.key[i].kstate) {  // Report active key state : IDLE, PRESSED, HOLD, or RELEASED
+				//case PRESSED:
+				//	msg = " PRESSED.";
+				//	break;
+				case HOLD:
+					msg = " HOLD.";
+          EncSwHold = true;
+          longclick = true;
+          clickcount=0;
+					break;
+				case RELEASED:
+					msg = " RELEASED.";
+          if (EncSwHold){
+            //longclick = true;
+            clickcount=0;
+            EncSwHold = false;
+          }
+          else {
+            clickcount++;
+          }
+					break;
+        //case IDLE:
+				//	msg = " IDLE.";
+				}
+        enc_inactivity = 0 ;                                 // Not inactive anymore
+				dbgprint ("Keypad rotary key: %c %s", ipdiopad.key[i].kchar, msg);
+			}
+		}
+	}
+}
+#endif			 
 //**************************************************************************************************
 //                                     S C A N D I G I T A L                                       *
 //**************************************************************************************************
@@ -2196,7 +2307,7 @@ void  scandigital()
         dbgprint ( reply ) ;                                // Result for debugging
       }
     }
-  }
+  } 
   // Now for the touch pins
   for ( i = 0 ; ( pinnr = touchpin[i].gpio ) >= 0 ; i++ )   // Scan all inputs
   {
@@ -2351,6 +2462,24 @@ String getradiostatus()
 //**************************************************************************************************
 void tftlog ( const char *str, bool newline )
 {
+#ifdef LCD1602I2C
+  static String tmpline = ("") ;                      // temporary text line
+  if ( dsp_ok )                                       // TFT configured?
+  {
+    if ( newline )                                    // new text line requested?
+    {
+      tmpline += str ;                                // add new text to temp line
+      tftdata[1].str = tftdata[2].str ;               // copy LCD-line2 to line1
+      tftdata[2].str = tmpline.substring(0,16) ;      // fill LCD-line1 with templine but cutoff longer lines
+      dsp_update (true);                              // force LCD update
+      tmpline=("");
+    }
+    else
+    {
+      tmpline += str ;                                // add new text to temp line
+    }
+  }
+#else  
   if ( dsp_ok )                                        // TFT configured?
   {
     dsp_print ( str ) ;                                // Yes, show error on TFT
@@ -2360,6 +2489,7 @@ void tftlog ( const char *str, bool newline )
     }
     dsp_update ( true ) ;                              // To physical screen
   }
+#endif  
 }
 
 
@@ -2681,14 +2811,20 @@ void setup()
   {
     dsp_setRotation() ;                                  // Yes, use landscape format
     dsp_erase() ;                                        // Clear screen
+    delay(600) ;                                         // Erase needs time on LCD1602 ?(weird random characters problem)?
     dsp_setTextSize ( DEFTXTSIZ ) ;                      // Small character font
     dsp_setTextColor ( GRAY ) ;                          // Info in grey
     dsp_setCursor ( 0, 0 ) ;                             // Top of screen
+  #ifdef LCD1602I2C
+    tftlog ("Ed Smallenburg's", true) ;
+    tftlog (NAME, true) ;
+  #else
     dsp_println ( "Starting......" ) ;
     strncpy ( tmpstr, VERSION, 16 ) ;                    // Limit version length
     dsp_println ( tmpstr ) ;
     dsp_println ( "By Ed Smallenburg" ) ;
     dsp_update ( enc_menu_mode == VOLUME ) ;             // Show on physical screen if needed
+  #endif  
   }
   if ( ini_block.tft_bl_pin >= 0 )                       // Backlight for TFT control?
   {
@@ -2732,11 +2868,13 @@ void setup()
   delay ( 100 ) ;                                        // Allow playtask to start
   p = "Connect to network" ;                             // Show progress
   dbgprint ( p ) ;
-  tftlog ( p, true ) ;                                   // On TFT too
+  tftlog ( "Connect to " ) ;                                   // On TFT too
   #ifdef ETHERNET
+    tftlog ("LAN", true) ;
     WiFi.onEvent ( EthEvent ) ;                             // Set actions on ETH events
     NetworkFound = connectETH() ;                        // Connect to Ethernet
   #else
+    tftlog ("WLAN",true) ;
     NetworkFound = connectwifi() ;                       // Connect to WiFi network
   #endif
   tcpip_adapter_set_hostname ( TCPIP_ADAPTER_IF_STA,
@@ -3191,8 +3329,13 @@ void chk_enc()
     doubleclick = false ;
     enc_menu_mode = PRESET ;                                  // Swich to PRESET mode
     dbgprint ( "Encoder mode set to PRESET" ) ;
+    #ifdef LCD1602I2C                                   // A bit shorter for the 1602LCD
+    tftset ( 3, "<select station>\n"                    // Show current option
+                "Press to confirm" ) ;
+    #else            
     tftset ( 3, "Turn to select station\n"                    // Show current option
                 "Press to confirm" ) ;
+    #endif
     enc_preset = presetinfo.preset ;                          // Start with current preset
     updateNr ( &enc_preset, presetinfo.highest_preset,        // plus 1
                1, true ) ;
@@ -3324,6 +3467,9 @@ void chk_enc()
 //**************************************************************************************************
 void spfuncs()
 {
+  #ifdef LCD1602I2C
+  static uint16_t cnt = 4 ;                                     // Count to reduce display updates
+  #endif
   if ( spftrigger )                                             // Will be set every 100 msec
   {
     spftrigger = false ;                                        // Reset trigger
@@ -3338,12 +3484,20 @@ void spfuncs()
         if ( tftdata[i].update_req )                            // Refresh requested?
         {
           displayinfo ( i ) ;                                   // Yes, do the refresh
-          dsp_update ( enc_menu_mode == VOLUME ) ;              // Updates to the screen
+          //dsp_update ( enc_menu_mode == VOLUME ) ;            // Updates to the screen - Not needed as its done below!
           tftdata[i].update_req = false ;                       // Reset request
           break ;                                               // Just handle 1 request
         }
       }
+      #ifdef LCD1602I2C
+      if (cnt++ >= 4)                                           // Reduce Display Updates (affects Scroll Speed)
+      {
+        cnt = 0 ;
+        dsp_update ( enc_menu_mode == VOLUME ) ;                  // Be sure to paint physical screen
+      }
+      #else
       dsp_update ( enc_menu_mode == VOLUME ) ;                  // Be sure to paint physical screen
+      #endif
     }
     if ( dsp_usesSPI() )                                        // Does display uses SPI?
     {
@@ -3450,6 +3604,9 @@ void loop()
   }
   scanserial() ;                                    // Handle serial input
   scanserial2() ;                                   // Handle serial input from NEXTION (if active)
+  #ifdef KEYPAD
+    scankeypad();                                   // Read Keypad input
+  #endif
   scandigital() ;                                   // Scan digital inputs
   scanIR() ;                                        // See if IR input
   otaHandle() ;                                     // Check for OTA
@@ -4148,6 +4305,21 @@ const char* analyzeCmd ( const char* par, const char* val )
               "Select %s",                            // Format reply
               value.c_str() ) ;
     utf8ascii_ip ( reply ) ;                          // Remove possible strange characters
+  }
+  else if ( argument == "stop" )                      // (un)Stop requested?
+  {
+    if ( mp3client && mp3client->connected() )
+    {
+      dbgprint("Try to stop...");
+      myQueueSend ( sdqueue, &stopcmd ) ;             // Stop player
+      myQueueSend ( radioqueue, &stopcmd ) ;          // Stop player
+    }
+    else
+    {
+      dbgprint("Try to resume...");
+      //setdatamode ( INIT ) ;                          // Mode to INIT again
+      myQueueSend ( radioqueue, &startcmd ) ;         // Signal radiofuncs()
+    }
   }
   else if ( argument == "status" )                    // Status request
   {

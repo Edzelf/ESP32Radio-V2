@@ -331,13 +331,14 @@ void LCD1602_dsp_update_line ( uint8_t lnr )
 //***********************************************************************************************
 void LCD1602_dsp_update ( bool isvolume )
 {
-  static uint16_t cnt = 0 ;                                 // Reduce updates
+  //// Reduce updates now in spfuncs as every dsp_update is needed for radio startup messages
+  //static uint16_t cnt = 3 ;                                 // Reduce updates
 
-  if ( cnt++ != 8 )                                         // Action every 8 calls
-  {
-    return ;
-  }
-  cnt = 0 ;
+  //if ( cnt++ != 4 )                                         // Action every 4 calls
+  //{
+  //  return ;
+  //}
+  //cnt = 0 ;
   if ( ! isvolume )                                         // Encoder menu mode?
   {
     dline[0].str = LCD1602_tftdata[3].str.substring(0,16) ; // Yes, different lines
@@ -352,11 +353,13 @@ void LCD1602_dsp_update ( bool isvolume )
   dline[1].str.trim() ;                                     // Remove non printing
   if ( dline[0].str.length() > 16 )
   {
-    dline[0].str += String ( "  " ) ;
+    //dline[0].str += String ( "  " ) ;
+    dline[0].str = String ( "               " ) + dline[0].str + String ( "               " ); //add 15 spaces for LCD1602 scrolling
   }
   if ( dline[1].str.length() > 16 )
   {
-    dline[1].str += String ( "  " ) ;
+    //dline[1].str += String ( "  " ) ;
+    dline[1].str = String ( "               " ) + dline[1].str + String ( "               " ); //add 15 spaces for LCD1602 scrolling
   }
   LCD1602_dsp_update_line ( 0 ) ;
   LCD1602_dsp_update_line ( 1 ) ;
