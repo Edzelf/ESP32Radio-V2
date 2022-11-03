@@ -11,7 +11,7 @@
 
 //#define ETHERNET                                        // For wired Ethernet (WT32-ETH-01 or similar)
 
-#define FIXEDWIFI "ADSL-11/DEADC0DE11"                    // Add a fixed SSID to the list (WiFi only)
+#define FIXEDWIFI "MYSSID/MYPASSWORD"                     // Add a fixed SSID to the list (WiFi only)
 
 // Define (just one) type of MP3/AAC decoder
 #define DEC_VS1053                                      // Hardware decoder for MP3, AAC, OGG
