@@ -5,7 +5,7 @@
   #define path() name()                               // Use "name()" instead
 #endif
 #define MAXFNLEN    512                               // Max length of a full filespec
-#define MAXSPACE    40000                             // Max space for filenames (bytes, not tracks).
+#define MAXSPACE    20000                             // Max space for filenames (bytes, not tracks).
                                                       // Approx. 36 tracks per kB
 #define SD_MAXDEPTH 4                                 // Maximum depths.  Note: see mp3play_html.
 

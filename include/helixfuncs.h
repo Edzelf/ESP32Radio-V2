@@ -1,9 +1,8 @@
 // helixfuncs.h
-// Fake function for HELIX decoder that are not supported.
-// Also framebuffering from incoming chunks is supported.
+// Functions for HELIX decoder.
 //
-#define player_AdjustRate(a)
-#define player_setTone(a)
+#define player_AdjustRate(a)                         // Not supported function
+#define player_setTone(a)                            // Not supported function
 
 #define FRAMESIZE               1600                 // Max. frame size in bytes (mp3 and aac)
 #define OUTSIZE                 2048                 // Max number of samples per channel (mp3 and aac)
@@ -27,7 +26,16 @@ static int16_t   outbuf[OUTSIZE*2] ;                 // I2S buffer
 //**************************************************************************************************
 void player_setVolume ( int16_t v )
 {
-  vol = v ;   	                                     // Save volume percentage
+  if ( vol != v )
+  {
+    vol = v ;   	                                     // Save volume percentage
+    dbgprint ( "Volume set to %d", vol ) ;
+    #ifdef DEC_HELIX_AI                                // For AI Audio kit: set volume directly
+      int8_t db = map ( vol, 0, 100, 0x0, 0x3F ) ;     // 0..100% to -43.5 .. 0 dB (0..63)
+      dac.SetVolumeSpeaker ( db ) ;                    // Set volume control of amplifier
+      dac.SetVolumeHeadphone ( db ) ;
+    #endif
+  }
 }
 
 
@@ -188,11 +196,15 @@ void playChunk ( i2s_port_t i2s_num, const uint8_t* chunk )
           outbuf[i] = ( outbuf[i] * vol / 100 ) +     // Scale according to volume
                       0x8000 ;                        // internal DAC is not signed
         }
-      #else
+      #endif
+      #ifdef DEC_HELIX
         for ( int i = 0 ; i < smpwords ; i++ )        // Volume scaling
         {
           outbuf[i] = outbuf[i] * vol / 100 ;         // Scale according to volume
         }
+      #endif
+      #ifdef DEC_HELIX_AI
+        //                                            // Volume will be set directly
       #endif
     }
     i2s_write ( i2s_num, outbuf, smpbytes, &bw,       // Send to I2S
@@ -203,4 +215,3 @@ void playChunk ( i2s_port_t i2s_num, const uint8_t* chunk )
     mp3bpnt = mp3buff +mp3bcnt ;
   }
 }
-
