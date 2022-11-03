@@ -40,31 +40,40 @@
 //
 // Wiring. Note that this is just an example.  Pins (except 18, 19 and 23 of the SPI interface)
 // can be configured in the config page of the web interface.
-// ESP32dev Signal  Wired to LCD        Wired to VS1053      Wired to the rest
-// -------- ------  --------------      -------------------  ---------------
-// GPIO32           -                   pin 1 XDCS           -
-// GPIO5            -                   pin 2 XCS            -
-// GPIO4            -                   pin 4 DREQ           -
-// GPIO2            pin 3 D/C or A0     -                    -
-// GPIO22           -                   -                    -
-// GPIO16   RXD2    -                   -                    TX of NEXTION (if in use)
-// GPIO17   TXD2    -                   -                    RX of NEXTION (if in use)
-// GPIO18   SCK     pin 5 CLK or SCK    pin 5 SCK            -
-// GPIO19   MISO    -                   pin 7 MISO           -
-// GPIO23   MOSI    pin 4 DIN or SDA    pin 6 MOSI           -
-// GPIO15           pin 2 CS            -                    -
-// GPI03    RXD0    -                   -                    Reserved serial input
-// GPIO1    TXD0    -                   -                    Reserved serial output
-// GPIO34   -       -                   -                    Optional pull-up resistor
-// GPIO35   -       -                   -                    Infrared receiver VS1838B
-// GPIO25   -       -                   -                    Rotary encoder CLK
-// GPIO26   -       -                   -                    Rotary encoder DT
-// GPIO27   -       -                   -                    Rotary encoder SW
-// -------  ------  ---------------     -------------------  ----------------
-// GND      -       pin 8 GND           pin 8 GND            Power supply GND
-// VCC 5 V  -       pin 7 BL            -                    Power supply
-// VCC 5 V  -       pin 6 VCC           pin 9 5V             Power supply
-// EN       -       pin 1 RST           pin 3 XRST           -
+//
+// ESP32dev Signal  Wired to LCD        Wired to VS1053      AI Audio board    Wired to the rest
+// -------- ------  --------------      -------------------  ---------------   ------------------------
+// GPIO32           -                   pin 1 XDCS           I2C Clock
+// GPIO33           -                   pin 1 XDCS           I2C Data
+// GPIO5            -                   pin 2 XCS            KEY 6             -
+// GPIO4            -                   pin 4 DREQ           AMPLIFIER_ENABLE  -
+// GPIO2            pin 3 D/C or A0     -                    SPI_MISO          -
+// GPIO16   RXD2    -                   -                                      TX of NEXTION (if in use)
+// GPIO17   TXD2    -                   -                                      RX of NEXTION (if in use)
+// GPIO18   SCK     pin 5 CLK or SCK    pin 5 SCK            KEY 5             -
+// GPIO19   MISO    -                   pin 7 MISO           KEY 3             -
+// GPIO23   MOSI    pin 4 DIN or SDA    pin 6 MOSI           KEY 4             -
+// GPIO15           pin 2 CS            -                    SPI_MOSI          -
+// GPIO3    RXD0    -                   -                                      Reserved serial input
+// GPIO1    TXD0    -                   -                                      Reserved serial output
+// GPIO34   -       -                   -                                      Optional pull-up resistor
+// GPIO35   -       -                   -                                      Infrared receiver VS1838B
+// GPIO25   -       -                   -                    I2S DSIN          Rotary encoder CLK
+// GPIO26   -       -                   -                    I2S LRC           Rotary encoder DT
+// GPIO27   -       -                   -                    I2S BCLK          Rotary encoder SW
+// GPIO13   -       -                   -                    SD card CS        -
+// GPIO14   -       -                   -                    SPI_SCK           -
+// GPIO36   -       -                   -                    KEY 1             -
+// GPIO13   -       -                   -                    KEY 2             -
+// GPIO19   -       -                   -                    KEY 3             -
+// GPIO23   -       -                   -                    KEY 4             -
+// GPIO18   -       -                   -                    KEY 5             -
+// GPIO05   -       -                   -                    KEY 6             -
+// -------  ------  ---------------     -------------------                    ----------------
+// GND      -       pin 8 GND           pin 8 GND                              Power supply GND
+// VCC 5 V  -       pin 7 BL            -                                      Power supply
+// VCC 5 V  -       pin 6 VCC           pin 9 5V                               Power supply
+// EN       -       pin 1 RST           pin 3 XRST                             -
 //
 //  History:
 //   Date     Author        Remarks
@@ -84,9 +93,10 @@
 // 25-04-2022, ES: Support for WT32-ETH01 (wired Ethernet).
 // 13-05-2022, ES: Correction I2S settings.
 // 15-05-2022, ES: Correction mp3 list for web interface.
+// 01-11-2022, ES: Support of AI Audio kit V2.1.
 //
-// Define the version number, the format used isspecified by the HTTP standard.
-#define VERSION     "Sun, 15 May 2022 10:30:00 GMT"
+// Define the version number, the format used is the HTTP standard.
+#define VERSION     "Thu, 03 Nov 2022 13:00:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include <WiFi.h>
@@ -114,8 +124,13 @@
 #include <base64.h>                                       // For Basic authentication
 #include <SPIFFS.h>                                       // Filesystem
 #include "utils.h"                                        // Some handy utilities
-#ifdef DEC_HELIX_INT                                      // Software decoder using internal DAC?
+#if defined(DEC_HELIX_INT) || defined(DEC_HELIX_AI)       // Software decoder using internal DAC?
   #define DEC_HELIX                                       // Yes, make sure to include software decoders
+  #ifdef DEC_HELIX_AI                                     // AI Audio kit board?
+   #include <AC101.h>
+   #define GPIO_PA_EN 21                                  // GPIO for enabling amplifier
+   AC101 dac ;                                            // AC101 controls
+  #endif
 #endif
 #ifdef DEC_HELIX                                          // Software decoder?
   #include <driver/i2s.h>                                 // Driver for I2S output
@@ -219,6 +234,8 @@ struct ini_struct
   int8_t         tft_sda_pin ;                        // GPIO connected to SDA of I2C TFT screen
   int8_t         tft_bl_pin ;                         // GPIO to activate BL of display
   int8_t         tft_blx_pin ;                        // GPIO to activate BL of display (inversed logic)
+  int8_t         nxt_rx_pin ;                         // GPIO for input from NEXTION
+  int8_t         nxt_tx_pin ;                         // GPIO for output to NEXTION
   int8_t         sd_cs_pin ;                          // GPIO connected to CS of SD card
   int8_t         vs_cs_pin ;                          // GPIO connected to CS of VS1053
   int8_t         vs_dcs_pin ;                         // GPIO connected to DCS of VS1053
@@ -354,7 +371,8 @@ uint32_t          ir_0 = 550 ;                           // Average duration of 
 uint32_t          ir_1 = 1650 ;                          // Average duration of an IR long pulse
 struct tm         timeinfo ;                             // Will be filled by NTP server
 bool              time_req = false ;                     // Set time requested
-uint16_t          adcval ;                               // ADC value (battery voltage)
+uint16_t          adcvalraw ;                            // ADC value (raw)
+uint16_t          adcval ;                               // ADC value (battery voltage, averaged)
 uint32_t          clength ;                              // Content length found in http header
 uint16_t          bltimer = 0 ;                          // Backlight time-out counter
 bool              dsp_ok = false ;                       // Display okay or not
@@ -463,6 +481,7 @@ touchpin_struct   touchpin[] =                           // Touch pins and progr
   {  -1, false, false, "", false, 0 }                    // End of list
   // End of table
 } ;
+
 
 //**************************************************************************************************
 // End of global data section.                                                                     *
@@ -1630,7 +1649,7 @@ bool connectwifi()
     tftlog ( "SSID = " ) ;                              // Show SSID on display
     tftlog ( WiFi.SSID().c_str(), true ) ;
     dbgprint ( "SSID = %s",                             // Format string with SSID connected to
-                      WiFi.SSID().c_str() ) ;
+               WiFi.SSID().c_str() ) ;
     ipaddress = WiFi.localIP().toString() ;             // Form IP address
   }
   pIP = ipaddress.c_str() ;                             // As c-string
@@ -1649,13 +1668,13 @@ bool connectwifi()
 //**************************************************************************************************
 //                                           O T A S T A R T                                       *
 //**************************************************************************************************
-// Update via WiFi/Ethernet has been started by Arduino IDE.                                       *
+// Update via WiFi/Ethernet has been started by Arduino IDE or PlatformIO.                         *
 //**************************************************************************************************
 void otastart()
 {
   const char* p = "OTA update Started" ;
 
-  dbgprint ( p ) ;                                 // Shaow event for debug
+  dbgprint ( p ) ;                                 // Show event for debug
   tftset ( 2, p ) ;                                // Set screen segment bottom part
   mp3client->close() ;
   timerAlarmDisable ( timer ) ;                    // Disable the timer
@@ -1753,9 +1772,11 @@ void readprogbuttons()
 
   for ( i = 0 ; ( pinnr = progpin[i].gpio ) >= 0 ; i++ )    // Scan for all programmable pins
   {
+    //dbgprint ( "Check programmable GPIO_%02d",pinnr ) ;
     sprintf ( mykey, "gpio_%02d", pinnr ) ;                 // Form key in preferences
     if ( nvssearch ( mykey ) )
     {
+      //dbgprint ( "Pin in NVS" ) ;
       val = nvsgetstr ( mykey ) ;                           // Get the contents
       if ( val.length() )                                   // Does it exists?
       {
@@ -1803,7 +1824,7 @@ void readprogbuttons()
 //                                       R E S E R V E P I N                                       *
 //**************************************************************************************************
 // Set I/O pin to "reserved".                                                                      *
-// The pin is than not available for a programmable function.                                      *
+// The pin will be unavailable for a programmable function.                                        *
 //**************************************************************************************************
 void reservepin ( int8_t rpinnr )
 {
@@ -1818,7 +1839,8 @@ void reservepin ( int8_t rpinnr )
       {
         dbgprint ( "Pin %d is already reserved!", rpinnr ) ;
       }
-      //dbgprint ( "GPIO%02d unavailabe for 'gpio_'-command", pin ) ;
+      //dbgprint ( "GPIO%02d unavailabe for 'gpio_'-command",
+      //           pin ) ;
       progpin[i].reserved = true ;                          // Yes, pin is reserved now
       break ;                                               // No need to continue
     }
@@ -1830,7 +1852,8 @@ void reservepin ( int8_t rpinnr )
   {
     if ( pin == rpinnr )                                    // Entry found?
     {
-     //dbgprint ( "GPIO%02d unavailabe for 'touch'-command", pin ) ;
+      //dbgprint ( "GPIO%02d unavailabe for touch command",
+      //           pin ) ;
       touchpin[i].reserved = true ;                         // Yes, pin is reserved now
       break ;                                               // No need to continue
     }
@@ -1865,6 +1888,8 @@ void readIOprefs()
     { "pin_tft_sda",   &ini_block.tft_sda_pin,      -1 }, // Display I2C version
     { "pin_tft_bl",    &ini_block.tft_bl_pin,       -1 }, // Display backlight
     { "pin_tft_blx",   &ini_block.tft_blx_pin,      -1 }, // Display backlight (inversed logic)
+    { "pin_nxt_rx",    &ini_block.nxt_rx_pin,       -1 }, // NEXTION input pin
+    { "pin_nxt_tx",    &ini_block.nxt_tx_pin,       -1 }, // NEXTION output pin
     { "pin_sd_cs",     &ini_block.sd_cs_pin,        -1 }, // SD card select
     { "pin_vs_cs",     &ini_block.vs_cs_pin,        -1 }, // VS1053 pins
     { "pin_vs_dcs",    &ini_block.vs_dcs_pin,       -1 },
@@ -1882,9 +1907,9 @@ void readIOprefs()
     { "pin_eth_mdio",  &ini_block.eth_mdio_pin,     18 },
     { "pin_eth_power", &ini_block.eth_power_pin,    16 },
   #else
-    { "pin_spi_sck",   &ini_block.spi_sck_pin,      18 },
-    { "pin_spi_miso",  &ini_block.spi_miso_pin,     19 },
-    { "pin_spi_mosi",  &ini_block.spi_mosi_pin,     23 },
+    { "pin_spi_sck",   &ini_block.spi_sck_pin,      18 }, // Note: different for AI Audio kit (14)
+    { "pin_spi_miso",  &ini_block.spi_miso_pin,     19 }, // Note: different for AI Audio kit (2)
+    { "pin_spi_mosi",  &ini_block.spi_mosi_pin,     23 }, // Note: different for AI Audio kit (15)
   #endif
     { NULL,            NULL,                        0  }  // End of list
   } ;
@@ -1916,10 +1941,6 @@ void readIOprefs()
                  ival ) ;
     }
   }
-#ifdef NEXTION  
-  reservepin ( NXT_RX_PIN ) ;                             // Reserve RX pin of serial port
-  reservepin ( NXT_TX_PIN ) ;                             // Reserve TX pin of serial port
-#endif
 }
 
 
@@ -3376,7 +3397,7 @@ void spfuncs()
       }
       displayvolume ( player_getVolume() ) ;                    // Show volume on display
       displaybattery ( ini_block.bat0, ini_block.bat100,        // Show battery charge on display
-                      adcval ) ;
+                       adcval ) ;
     }
     releaseSPI() ;                                              // Release SPI bus
     if ( mqtt_on )
@@ -3390,8 +3411,9 @@ void spfuncs()
         mqttpub.publishtopic() ;                                // Check if any publishing to do
       }
     }
-    adcval = ( 15 * adcval +                                    // Read ADC and do some filtering
-               adc1_get_raw ( ADC1_CHANNEL_0 ) ) / 16 ;
+    adcvalraw = adc1_get_raw ( ADC1_CHANNEL_0 ) ;
+    adcval = 15 * adcval +                                      // Read ADC and do some filtering
+             adcvalraw / 16 ;
   }
 }
 
@@ -3470,7 +3492,7 @@ void loop()
     // heap_caps_print_heap_info ( MALLOC_CAP_8BIT ) ;
     dbgprint ( "Stack maintask  is %d", uxTaskGetStackHighWaterMark ( maintask   ) ) ;
     dbgprint ( "Stack playtask  is %d", uxTaskGetStackHighWaterMark ( xplaytask  ) ) ;
-    dbgprint ( "ADC reading is %d", adcval ) ;
+    dbgprint ( "ADC reading is %d, filtered %d", adcvalraw, adcval ) ;
     dbgprint ( "%d IR interrupts seen", ir_intcount ) ;
   }
 }
@@ -4412,7 +4434,7 @@ void playtask ( void * parameter )
 }
 #endif
 
-#ifdef DEC_HELIX
+#if defined(DEC_HELIX) || defined(DEC_HELIX_AI)
 //**************************************************************************************************
 //                               P L A Y T A S K ( I 2 S )                                         *
 //**************************************************************************************************
@@ -4459,43 +4481,53 @@ void playtask ( void * parameter )
     #endif
   #endif
   dbgprint ( "Starting I2S playtask.." ) ;
-  MP3Decoder_AllocateBuffers() ;                                   // Init HELIX buffers
-  AACDecoder_AllocateBuffers() ;                                   // Init HELIX buffers
+  #ifdef DEC_HELIX_AI                                              // For AI board?
+    #define IIC_DATA 33                                            // Yes, use these I2C signals
+    #define IIC_CLK  32
+    if ( ! dac.begin ( IIC_DATA, IIC_CLK ) )                       // Initialize AI dac
+    {
+      dbgprint ( "AI dac error!" ) ;
+    }
+    pinMode ( GPIO_PA_EN, OUTPUT ) ;
+    digitalWrite ( GPIO_PA_EN, HIGH ) ;
+  #endif
+  MP3Decoder_AllocateBuffers() ;                                    // Init HELIX buffers
+  AACDecoder_AllocateBuffers() ;                                    // Init HELIX buffers
   if ( i2s_driver_install ( i2s_num, &i2s_config, 0, NULL ) != ESP_OK )
   {
     dbgprint ( "I2S install error!" ) ;
   }
-  #ifdef DEC_HELIX_INT                                             // Use internal (8 bit) DAC?
-    dbgprint ( "Output to internal DAC" ) ;                        // Show output device
-    pinss_err = i2s_set_pin ( i2s_num, NULL ) ;                    // Yes, default pins for internal DAC
+  #ifdef DEC_HELIX_INT                                              // Use internal (8 bit) DAC?
+    dbgprint ( "Output to internal DAC" ) ;                         // Show output device
+    pinss_err = i2s_set_pin ( i2s_num, NULL ) ;                     // Yes, default pins for internal DAC
     i2s_set_dac_mode ( I2S_DAC_CHANNEL_BOTH_EN ) ;
   #else
-    i2s_pin_config_t pin_config ;                                  // I2s pin config
-    pin_config.bck_io_num    = ini_block.i2s_bck_pin ;             // This is BCK pin
-    pin_config.ws_io_num     = ini_block.i2s_lck_pin ;             // This is L(R)CK pin
-    pin_config.data_out_num  = ini_block.i2s_din_pin ;             // This is DATA output pin
-    pin_config.data_in_num   = I2S_PIN_NO_CHANGE ;                 // No input
+    i2s_pin_config_t pin_config ;                                   // I2s pin config
+    pin_config.bck_io_num    = ini_block.i2s_bck_pin ;              // This is BCK pin
+    pin_config.ws_io_num     = ini_block.i2s_lck_pin ;              // This is L(R)CK pin
+    pin_config.data_out_num  = ini_block.i2s_din_pin ;              // This is DATA output pin
+    pin_config.data_in_num   = I2S_PIN_NO_CHANGE ;                  // No input
     #if ESP_ARDUINO_VERSION_MAJOR >= 2
-      pin_config.mck_io_num    = I2S_PIN_NO_CHANGE ;               // MCK not used
+      pin_config.mck_io_num    = I2S_PIN_NO_CHANGE ;                // MCK not used
     #endif
-    dbgprint ( "Output to I2S, pins %d, %d and %d",                // Show pins used for output device
-               pin_config.bck_io_num,                              // This is the BCK (bit clock) pin
-               pin_config.ws_io_num,                               // This is L(R)CK pin
-               pin_config.data_out_num ) ;                         // This is DATA output pin
+    dbgprint ( "Output to I2S, pins %d, %d and %d",                 // Show pins used for output device
+               pin_config.bck_io_num,                               // This is the BCK (bit clock) pin
+               pin_config.ws_io_num,                                // This is L(R)CK pin
+               pin_config.data_out_num ) ;                          // This is DATA output pin
     if ( ( ini_block.i2s_bck_pin + 
            ini_block.i2s_lck_pin +
-           ini_block.i2s_din_pin ) > 2 )                           // Check for legal pins
+           ini_block.i2s_din_pin ) > 2 )                            // Check for legal pins
     {
-      pinss_err = i2s_set_pin ( i2s_num, &pin_config ) ;           // Set I2S pins
+      pinss_err = i2s_set_pin ( i2s_num, &pin_config ) ;            // Set I2S pins
     }
   #endif
-  i2s_zero_dma_buffer ( i2s_num ) ;                                // Zero the buffer
-  if ( pinss_err != ESP_OK )                                       // Check error condition
+  i2s_zero_dma_buffer ( i2s_num ) ;                                 // Zero the buffer
+  if ( pinss_err != ESP_OK )                                        // Check error condition
   {
-    dbgprint ( "I2S setpin error!" ) ;                             // Rport bad pis
-    while ( true)                                                  // Forever..
+    dbgprint ( "I2S setpin error!" ) ;                              // Rport bad pis
+    while ( true)                                                   // Forever..
     {
-      xQueueReceive ( dataqueue, &inchunk, 500 ) ;                 // Ignore all chunk from queue
+      xQueueReceive ( dataqueue, &inchunk, 500 ) ;                  // Ignore all chunk from queue
     }
   }
   while ( true )
@@ -4558,6 +4590,7 @@ void sdfuncs()
   }
   if ( ! scanned )                                                  // SD directory alread scanned?
   {
+    dbgprint ( "Mount SD card, CS = %d", ini_block.sd_cs_pin ) ;
     if ( ( sdokay = mount_SDCARD ( ini_block.sd_cs_pin ) ) )        // Mount possible SD card
     {
       dbgprint ( "SD okay, start scan" ) ;
