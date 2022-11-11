@@ -1367,6 +1367,9 @@ void showstreamtitle ( const char *ml, bool full )
     }
     strcpy ( p1, p2 ) ;                         // Shift 2nd part of title 2 or 3 places
   }
+  #if defined(OLED1306) || defined(OLED1306) || defined(OLED1106) 
+   if (sizeof ( streamtitle ) > 64) streamtitle[64] = '\0' ;
+  #endif
   tftset ( 1, streamtitle ) ;                   // Set screen segment text middle part
 }
 
@@ -3592,6 +3595,7 @@ void handlebyte_ch ( uint8_t b )
   static int       LFcount ;                            // Detection of end of header
   static bool      ctseen = false ;                     // First line of header seen or not
   static bool      redirection = false ;                // Redirection or not
+  uint8_t          icyname_len = 0 ;
 
   if ( chunked &&
        ( datamode & ( DATA |                           // Test op DATA handling
@@ -3711,6 +3715,10 @@ void handlebyte_ch ( uint8_t b )
           icyname = metaline.substring(9) ;            // Get station name
           icyname = decode_spec_chars ( icyname ) ;    // Decode special characters in name
           icyname.trim() ;                             // Remove leading and trailing spaces
+          #if defined(OLED1306) || defined(OLED1306) || defined(OLED1106)
+            icyname_len = icyname.length();
+            if (icyname_len > 42) icyname = icyname.substring(0, 41);
+          #endif
           tftset ( 2, icyname ) ;                      // Set screen segment bottom part
           mqttpub.trigger ( MQTT_ICYNAME ) ;           // Request publishing to MQTT
         }
