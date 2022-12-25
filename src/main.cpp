@@ -1,5 +1,3 @@
-// DiKo - 
-// 11.2022 MQTT - send IR
 //***************************************************************************************************
 //*  ESP32_Radio V2 -- Webradio receiver for ESP32, VS1053 MP3 module and optional display.         *
 //*                    By Ed Smallenburg.                                                           *
@@ -320,8 +318,6 @@ enum datamode_t { INIT = 0x1, HEADER = 0x2, DATA = 0x4,      // State for datast
                 } ;
 
 // Global variables
-String            ircode ;                            // diko - empfangener IR-Code
-uint16_t          ir_value_mqtt = 0 ;                         // DiKo IR code
 int               numSsid ;                              // Number of available WiFi networks
 bool              ota = false ;                          // Allow OTA updates
 preset_info_t     presetinfo ;                           // Info about the current or new station
@@ -498,12 +494,8 @@ touchpin_struct   touchpin[] =                           // Touch pins and progr
 //                                     M Q T T P U B _ C L A S S                                   *
 //**************************************************************************************************
 // ID's for the items to publish to MQTT.  Is index in amqttpub[]
-// DIKO 
-//enum { MQTT_IP,     MQTT_ICYNAME, MQTT_STREAMTITLE, MQTT_NOWPLAYING,
-//       MQTT_PRESET, MQTT_VOLUME, MQTT_PLAYING, MQTT_PLAYLISTPOS
-//     } ;
 enum { MQTT_IP,     MQTT_ICYNAME, MQTT_STREAMTITLE, MQTT_NOWPLAYING,
-       MQTT_PRESET, MQTT_VOLUME, MQTT_PLAYING, MQTT_PLAYLISTPOS, MQTT_IR
+       MQTT_PRESET, MQTT_VOLUME, MQTT_PLAYING, MQTT_PLAYLISTPOS
      } ;
 enum { MQSTRING, MQINT8, MQINT16 } ;                     // Type of variable to publish
 
@@ -519,7 +511,7 @@ class mqttpubc                                           // For MQTT publishing
     // Publication topics for MQTT.  The topic will be pefixed by "PREFIX/", where PREFIX is replaced
     // by the the mqttprefix in the preferences.
   protected:
-    mqttpub_struct amqttpub[10] =                         // Definitions of various MQTT topic to publish
+    mqttpub_struct amqttpub[9] =                         // Definitions of various MQTT topic to publish
     { // Index is equal to enum above
       { "ip",              MQSTRING, &ipaddress,             false }, // Definition for MQTT_IP
       { "icy/name",        MQSTRING, &icyname,               false }, // Definition for MQTT_ICYNAME
@@ -529,7 +521,6 @@ class mqttpubc                                           // For MQTT publishing
       { "volume" ,         MQINT8,   &ini_block.reqvol,      false }, // Definition for MQTT_VOLUME
       { "playing",         MQINT8,   &playingstat,           false }, // Definition for MQTT_PLAYING
       { "playlist/pos",    MQINT16,  &presetinfo.playlistnr, false }, // Definition for MQTT_PLAYLISTPOS
-      { "IR",    MQINT16,  &ir_value_mqtt, false }, // diko Definition for MQTT_IR
       { NULL,              0,        NULL,                   false }  // End of definitions
     } ;
   public:
@@ -2290,12 +2281,6 @@ void scanIR()
       dbgprint ( "IR code %04X received, but not found in preferences!  Timing %d/%d",
                  ir_value, ir_0, ir_1 ) ;
     }
-
-// diko
-// publish IR-Code
-   ir_value_mqtt = ir_value;   //da das senden verzögert stattfindet, darf keine variable verwendet werden, welche vorher gelöscht wird
-   mqttpub.trigger ( MQTT_IR ) ;                         // Publish own IP
-
     ir_value = 0 ;                                          // Reset IR code received
   }
 }
