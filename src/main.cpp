@@ -381,6 +381,8 @@ bool              spftrigger = false ;                   // To trigger execution
 const char*       fixedwifi = "" ;                       // Used for FIXEDWIFI option
 const esp_partition_t*  spiffs = NULL ;                  // Pointer to SPIFFS partition struct
 std::vector<WifiInfo_t> wifilist ;                       // List with wifi_xx info
+String            ircode ;                               // received IR-Code
+uint16_t          ir_value_mqtt = 0 ;                    // IR code for MQTT
 
 // nvs stuff
 nvs_page                nvsbuf ;                         // Space for 1 page of NVS info
@@ -495,7 +497,7 @@ touchpin_struct   touchpin[] =                           // Touch pins and progr
 //**************************************************************************************************
 // ID's for the items to publish to MQTT.  Is index in amqttpub[]
 enum { MQTT_IP,     MQTT_ICYNAME, MQTT_STREAMTITLE, MQTT_NOWPLAYING,
-       MQTT_PRESET, MQTT_VOLUME, MQTT_PLAYING, MQTT_PLAYLISTPOS
+       MQTT_PRESET, MQTT_VOLUME, MQTT_PLAYING, MQTT_PLAYLISTPOS, MQTT_IR
      } ;
 enum { MQSTRING, MQINT8, MQINT16 } ;                     // Type of variable to publish
 
@@ -511,7 +513,7 @@ class mqttpubc                                           // For MQTT publishing
     // Publication topics for MQTT.  The topic will be pefixed by "PREFIX/", where PREFIX is replaced
     // by the the mqttprefix in the preferences.
   protected:
-    mqttpub_struct amqttpub[9] =                         // Definitions of various MQTT topic to publish
+    mqttpub_struct amqttpub[10] =                         // Definitions of various MQTT topic to publish
     { // Index is equal to enum above
       { "ip",              MQSTRING, &ipaddress,             false }, // Definition for MQTT_IP
       { "icy/name",        MQSTRING, &icyname,               false }, // Definition for MQTT_ICYNAME
@@ -521,6 +523,7 @@ class mqttpubc                                           // For MQTT publishing
       { "volume" ,         MQINT8,   &ini_block.reqvol,      false }, // Definition for MQTT_VOLUME
       { "playing",         MQINT8,   &playingstat,           false }, // Definition for MQTT_PLAYING
       { "playlist/pos",    MQINT16,  &presetinfo.playlistnr, false }, // Definition for MQTT_PLAYLISTPOS
+      { "IR",              MQINT16,  &ir_value_mqtt,         false }, // Definition for MQTT_IR
       { NULL,              0,        NULL,                   false }  // End of definitions
     } ;
   public:
@@ -2281,6 +2284,11 @@ void scanIR()
       dbgprint ( "IR code %04X received, but not found in preferences!  Timing %d/%d",
                  ir_value, ir_0, ir_1 ) ;
     }
+
+// publish IR-Code
+   ir_value_mqtt = ir_value;                                 // because delayed sending, we need a global variable
+   mqttpub.trigger ( MQTT_IR ) ;                             // Publish IR
+
     ir_value = 0 ;                                          // Reset IR code received
   }
 }
