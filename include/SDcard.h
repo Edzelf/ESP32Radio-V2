@@ -1,67 +1,54 @@
 // SDcard.h
 // Includes for SD card interface
 //
-#if ESP_ARDUINO_VERSION_MAJOR < 2                     // File function "path()" not available in older versions
-  #define path() name()                               // Use "name()" instead
+#if ESP_ARDUINO_VERSION_MAJOR < 2                         // File function "path()" not available in older versions
+  #define path() name()                                   // Use "name()" instead
 #endif
-#define MAXFNLEN    512                               // Max length of a full filespec
-#define MAXSPACE    20000                             // Max space for filenames (bytes, not tracks).
-                                                      // Approx. 36 tracks per kB
-#define SD_MAXDEPTH 4                                 // Maximum depths.  Note: see mp3play_html.
-
-struct mp3specbuf_t
-{
-  char mp3specbuf[MAXSPACE] ;                         // Space for all MP3 filenames on SD card
-} ;
-
-struct mp3spec_t                                      // For List of mp3 file on SD card
-{
-  uint16_t prevlen ;                                  // Number of chars that are equal to previous
-  char     filespec[MAXFNLEN] ;                       // Full file spec, the divergent end part
-} ;
-
+#define MAXFNLEN        256                               // Max length of a full filespec
+#define RINGBUFFERSPACE 2560
+#define SD_MAXDEPTH     4                                 // Maximum depths.  Note: see mp3play_html.
 
 #ifndef SDCARD
-  #define mount_SDCARD()         false                   // Dummy mount
-  #define scan_SDCARD()                                  // Dummy scan files
-  //#define check_SDCARD()                               // Dummy check
-  #define close_SDCARD()                                 // Dummy close
-  #define read_SDCARD(a,b)       0                       // Dummy read file buffer
-  #define selectnextSDnode(b)    String("")
+  #define mount_SDCARD()         false                    // Dummy mount
+  //#define check_SDCARD()                                // Dummy check
+  #define close_SDCARD()                                  // Dummy close
+  #define read_SDCARD(a,b)       0                        // Dummy read file buffer
   #define getSDfilename(a)       String("")
-  #define listsdtracks(a,b,c)    0
-  #define connecttofile_SD()      false                  // Dummy connect to file
+  #define connecttofile_SD()      false                   // Dummy connect to file
+  #define initSDTask()                                    // Dummy start of task
 #else
   #include <SPI.h>
   #include <SD.h>
   #include <FS.h>
-  #define SDSPEED 4000000                               // SPI speed of SD card
+  #include <freertos/ringbuf.h>
+  #define SDSPEED 8000000                               // SPI speed of SD card
 
-  int         SD_filecount = 0 ;                        // Number of filenames in SD_nodelist
-  int         SD_curindex ;                             // Current index in mp3names
-  mp3spec_t*  mp3spec ;                                 // Pointer to next mp3spec
-  char        SD_lastmp3spec[MAXFNLEN] ;                // Previous full file spec
-  char*       mp3names = nullptr ;                      // Filenames on SD
-  char*       fillptr = nullptr ;                       // Fill pointer in mp3names
-  File        mp3file ;                                 // File containing mp3 on SD card
-  int         mp3filelength ;                           // Length of file
-  int         spaceLeft ;                               // Space left in mp3names
-  bool        randomplay = false ;                      // Switch for random play
+  RingbufHandle_t fnbuf ;                               // Ringbuffer to store filenames
+  bool            SD_okay = false ;                     // SD is mounted
+  char            SD_lastmp3spec[MAXFNLEN] ;            // Previous full file spec
+  int             SD_filecount = 0 ;                    // Number of files on SD
+  int             tracknum = 0 ;                        // Current track number
+  File            mp3file ;                             // File containing mp3 on SD card
+  int             mp3filelength ;                       // Length of file
+  bool            randomplay = false ;                  // Switch for random play
 
   // Forward declaration
-  void        setdatamode ( datamode_t newmode ) ;
+  void SDtask ( void * parameter ) ;
+  void setdatamode ( datamode_t newmode ) ;
+  bool mount_SDCARD ( int8_t csPin ) ;
+
 
   //**************************************************************************************************
-  //                               G E T F I R S T S D F I L E N A M E                               *
+  //                                   S E T S D F I L E N A M E                                     *
   //**************************************************************************************************
-  // Get the first filespec from mp3names.                                                           *
+  // Set the current filespec.                                                                       *
   //**************************************************************************************************
-  char* getFirstSDFileName()
+  void setSDFileName ( const char* fnam )
   {
-    mp3spec = (mp3spec_t*)mp3names ;                    // Set pointer to begin of list
-    strcpy ( SD_lastmp3spec, mp3spec->filespec ) ;      // Copy filename into SD_last
-    SD_curindex = 0 ;                                   // Set current index to 0
-    return SD_lastmp3spec ;                             // Return pointer to filename
+    if ( strlen ( fnam ) < MAXFNLEN )                   // Guard against long filenames
+    {
+      strcpy ( SD_lastmp3spec,  fnam ) ;                // Copy filename intp SD_last
+    }
   }
 
 
@@ -71,39 +58,42 @@ struct mp3spec_t                                      // For List of mp3 file on
   // Get a filespec from mp3names at index.                                                          *
   // If index is negative, a random track is selected.                                               *
   //**************************************************************************************************
-  char* getSDFileName ( int inx )
+  const char* getSDFileName ( int inx )
   {
-    int      entrysize ;                                // Size of entry including string delimeter
-    char*    p ;                                        // For pointer manipulation
+    size_t      fnlen ;                                   // Length of filename
+    void*       fnam = NULL ;                             // Filename from ringbuffer
 
-    if ( inx < 0 )                                      // Negative track number?
+    if ( inx < 0 )                                        // Negative track number?
     {
-      inx = (int) random ( SD_filecount ) ;             // Yes, pick random track
-      randomplay = true ;                               // Set random play flag
+      inx = (int) random ( SD_filecount ) ;               // Yes, pick random track
+      randomplay = true ;                                 // Set random play flag
     }
     else
     {
-      randomplay = false ;                              // Not random, reset flag
+      randomplay = false ;                                // Not random, reset flag
     }
-    if ( inx >= SD_filecount )                          // Protect against going beyond last track
+    while ( inx-- )                                       // Move forward until at required position
     {
-      inx = 0 ;                                         // Beyond last track: rewind to begin
+      fnam = xRingbufferReceive ( fnbuf, &fnlen, 500 ) ;  // Read next filename
+      if ( fnam == nullptr )                              // Result?
+      {
+        break ;                                           // No, stop reading
+      }
     }
-    if ( inx < SD_curindex )                            // Going backwards?
+    if ( fnam )                                           // Final result?
     {
-      getFirstSDFileName() ;                            // Yes, start all over
+      SD_filecount-- ;                                    // Yes, keep filecount up to date
+      strcpy ( SD_lastmp3spec, (const char*)fnam ) ;      // Yes, copy filename into SD_last
+      vRingbufferReturnItem ( fnbuf, fnam ) ;             // Return space to the buffer
+      dbgprint ( "Filename from ringbuffer is %s",
+                 SD_lastmp3spec ) ;
     }
-    while ( SD_curindex < inx )                         // Move forward until at required position
+    else
     {
-      entrysize = sizeof(mp3spec->prevlen) +            // Size of entry including string delimeter
-                  strlen ( mp3spec->filespec )  + 1 ;
-      p = (char*)mp3spec + entrysize ;
-      mp3spec = (mp3spec_t*)p ;                         // Set pointer to begin of next entry
-      strcpy ( SD_lastmp3spec + mp3spec->prevlen,       // Copy filename intp SD_last
-              mp3spec->filespec ) ;
-      SD_curindex++ ;                                   // Set current index
+      dbgprint ( "End of ringbuffer list" ) ;
+      *SD_lastmp3spec = '\0' ;                            // Bad result is also end of list
     }
-    return SD_lastmp3spec ;                             // Return pointer to filename
+    return SD_lastmp3spec ;                               // Return pointer to filename
   }
 
 
@@ -112,9 +102,9 @@ struct mp3spec_t                                      // For List of mp3 file on
   //**************************************************************************************************
   // Get next filespec from mp3names.                                                                *
   //**************************************************************************************************
-  char* getNextSDFileName()
+  const char* getNextSDFileName()
   {
-    int inx = SD_curindex + 1 ;                          // By default next track
+    int inx =  1 ;                                       // By default next track
 
     if ( randomplay )                                    // Playing random tracks?
     {
@@ -129,20 +119,9 @@ struct mp3spec_t                                      // For List of mp3 file on
   //**************************************************************************************************
   // Get current filespec from mp3names.                                                             *
   //**************************************************************************************************
-  char* getCurrentSDFileName()
+  const char* getCurrentSDFileName()
   {
     return SD_lastmp3spec ;                             // Return pointer to filename
-  }
-
-
-  //**************************************************************************************************
-  //                        G E T C U R R E N T S D T R A C K N U M B E R                            *
-  //**************************************************************************************************
-  // Get current index in list of filespecs.                                                         *
-  //**************************************************************************************************
-  int getCurrentSDTrackNumber()
-  {
-    return SD_curindex ;                               // Return current track number
   }
 
 
@@ -151,103 +130,45 @@ struct mp3spec_t                                      // For List of mp3 file on
   //**************************************************************************************************
   // Get last part of current filespec from mp3names.                                                *
   //**************************************************************************************************
-  char* getCurrentShortSDFileName()
+  const char* getCurrentShortSDFileName()
   {
     return strrchr ( SD_lastmp3spec, '/' ) + 1 ;        // Last part of filespec
   }
 
 
   //**************************************************************************************************
-  //                                  C L E A R F I L E L I S T                                      *
+  //                                  A D D T O R I N G B U F                                        *
   //**************************************************************************************************
-  // Clear the list with full filespecs.                                                             *
+  // Add a filename to the ring buffer.                                                              *
+  // If an error occurs, the filename is lost.                                                       *
   //**************************************************************************************************
-  bool clearFileList()
+  void addToRingbuf ( const char* newfnam )
   {
-    SD_lastmp3spec[0] = '\0' ;                        // Last filename is now unknown
-    SD_filecount = 0 ;                                // Reset counter
-    spaceLeft = MAXSPACE ;                            // Set total space left
-    if ( mp3names == nullptr )                        // Already initialized?
+    size_t  fnlen = strlen ( newfnam ) + 1 ;                  // Length of filename plus delimeter
+  
+    if ( fnlen >= MAXFNLEN )                                  // Do not store very long filenames
     {
-      mp3names = (char*)new ( mp3specbuf_t ) ;        // Space for mp3 filenames on SD card
+      dbgprint ( "Long filename ignored!" ) ;                 // Show error
+      return ;
     }
-    if ( mp3names == nullptr )
+    while ( xRingbufferSend ( fnbuf, newfnam, fnlen, 100 ) == pdFALSE )
     {
-      dbgprint ( "No space for SD buffer!" ) ;
-      spaceLeft = 0 ;                                 // Set space left in buffer to 0
-    }
-    fillptr = mp3names ;                              // Start filling here
-    return ( mp3names != nullptr ) ;                  // Return result
-  }
-
-
-  //**************************************************************************************************
-  //                                  A D D T O F I L E L I S T                                      *
-  //**************************************************************************************************
-  // Add a filename to the file listpec.                                                             *
-  // Example:                                                                                        *
-  // Entry prevlen   filespec                             Interpreted result                         *
-  // ----- -------   --------------------------------     ------------------------------------       *
-  // [0]         0   /Fleetwood Mac/Albatross.mp3         /Fleetwood Mac/Albatross.mp3               *
-  // [1]        15   Hold Me.mp3                          /Fleetwood Mac/Hold Me.mp3                 *
-  //**************************************************************************************************
-  bool addToFileList ( const char* newfnam )
-  {
-    static mp3spec_t  entry ;                           // New entry to add to list (too big for stack)
-    char*             p = SD_lastmp3spec ;              // Set pointer to compare
-    uint16_t          n = 0 ;                           // Counter for number of equal characters
-    uint16_t          l = strlen ( newfnam ) ;          // Length of new file name
-    int               entrysize ;                       // Size of entry
-    bool              res = false ;                     // Function result
-
-    if ( l >= sizeof ( SD_lastmp3spec ) )               // Block very long filenames
-    {
-      dbgprint ( "SD filename too long (%d)!", l ) ;
-      return res ;                                      // Filename too long: skip
-    }
-    while ( *p == *newfnam )                            // Compare next character of filename
-    {
-      if ( *p == '\0' )                                 // End of name?
+      if ( ! SD_okay )                                        // Stop on SD error
       {
-        break ;                                         // Yes, stop
+        return ;
       }
-      n++ ;                                             // Equal: count
-      p++ ;                                             // Update pointers
-      newfnam++ ;
     }
-    entry.prevlen = n ;                                 // This part is equal to previous name
-    strcpy ( entry.filespec, newfnam ) ;                // This is last part of new filename
-    entrysize = sizeof(entry.prevlen) +                 // Size of entry including string delimeter
-                strlen (newfnam) + 1 ;
-    //dbgprint ( "Entrysize is %d", entrysize ) ;
-    res = ( ( fillptr != nullptr ) &&
-          ( entrysize <= spaceLeft ) ) ;                // Space for this entry?
-    if ( res )
-    {
-      strcpy ( p, newfnam ) ;                           // Set a new lastmp3spec
-      //dbgprint ( "Added %3d : %s", n,                 // Show last part of filename
-      //           getCurrentShortSDFileName() ) ;
-      memcpy ( fillptr, &entry, entrysize ) ;           // Yes, add to list
-      spaceLeft -= entrysize ;                          // Adjust space left
-      fillptr = fillptr + entrysize ;                   // Update pointer
-      SD_filecount++ ;                                  // Count number of files in list
-    }
-    else
-    {
-      dbgprint ( "No space for %s, %d > %d",
-                newfnam, entrysize, spaceLeft ) ;
-    }
-    return res ;                                        // Return result of adding name
+    SD_filecount++ ;                                          // Count number of files
   }
 
 
   //**************************************************************************************************
   //                                      G E T S D T R A C K S                                      *
   //**************************************************************************************************
-  // Search all MP3 files on directory of SD card.                                                   *
+  // Search all MP3 files on directory of SD card.  Store them in ringbuffer.                        *
   // Will be called recursively.                                                                     *
   //**************************************************************************************************
-  void getsdtracks ( const char * dirname, uint8_t levels )
+  bool getsdtracks ( const char * dirname, uint8_t levels )
   {
     File       root ;                                     // Work directory
     File       file ;                                     // File in work directory
@@ -259,12 +180,12 @@ struct mp3spec_t                                      // For List of mp3 file on
     if ( !root )                                          // Check on open
     {
       dbgprint ( "Failed to open directory" ) ;
-      return ;
+      return false ;
     }
     if ( !root.isDirectory() )                            // Really a directory?
     {
       dbgprint ( "Not a directory" ) ;
-      return ;
+      return false ;
     }
     claimSPI ( "sdopen2" ) ;                              // Claim SPI bus
     file = root.openNextFile() ;
@@ -273,31 +194,132 @@ struct mp3spec_t                                      // For List of mp3 file on
     {
       if ( file.isDirectory() )                           // Is it a directory?
       {
-        //dbgprint ( "  DIR : %s", file.path() ) ;
+        dbgprint ( "  DIR : %s", file.path() ) ;
         if ( levels )                                     // Dig in subdirectory?
         {
           if ( strrchr ( file.path(), '/' )[1] != '.' )   // Skip hidden directories
           {
-            getsdtracks ( file.path(), levels -1 ) ;      // Non hidden directory: call recursive
+            if ( ! getsdtracks ( file.path(),             // Non hidden directory: call recursive
+                                  levels -1 ) )
+            {
+              return false ;                              // File I/O error
+            }
           }
         }
       }
       else                                                // It is a file
       {
+        vTaskDelay ( 50 / portTICK_PERIOD_MS ) ;          // Allow others
         const char* ext = file.name() ;                   // Point to begin of name
         ext = ext + strlen ( ext ) - 4 ;                  // Point to extension
         if ( ( strcmp ( ext, ".MP3" ) == 0 ) ||           // It is a file, but is it an MP3?
             ( strcmp ( ext, ".mp3" ) == 0 ) )
         {
-          if ( ! addToFileList ( file.path() ) )          // Add file to the list
-          {
-            break ;                                       // No need to continue
-          }
+          addToRingbuf ( file.path() ) ;                  // Add file to the list
         }
       }
       claimSPI ( "sdopen3" ) ;                            // Claim SPI bus
       file = root.openNextFile() ;
       releaseSPI() ;                                      // Release SPI bus
+    }
+    return true ;
+  }
+
+
+  //**************************************************************************************************
+  //                                   S D I N S E R T C H E C K                                     *
+  //**************************************************************************************************
+  // Check if new SD card is inserted and can be read.                                               *
+  //**************************************************************************************************
+  bool SDInsertCheck()
+  {
+    static uint32_t nextCheckTime = 0 ;                     // To prevent checking too often
+    uint32_t        newmillis = millis() ;                  // Current timestamp
+    bool            sdinsNew ;                              // Result of insert check
+    void*           p ;                                     // Pointer to item from ringbuffer
+    size_t          f0 ;                                    // Length of item from ringbuffer
+    static bool     sdInserted = false ;                    // Yes, flag for inserted SD
+    int8_t          dpin = ini_block.sd_detect_pin ;        // SD inserted detect pin
+
+    if ( newmillis < nextCheckTime )                        // Time to check?
+    {
+      return false ;                                        // No, return "no new insert"
+    }
+    nextCheckTime = newmillis + 5000 ;                      // Yes, set new check time
+    if ( dpin >= 0 )                                        // Hardware detection possible?
+    {
+      sdinsNew = ( digitalRead ( dpin ) == LOW ) ;          // Yes, see if card inserted
+      if ( sdinsNew == sdInserted )                         // Situation changed?
+      {
+        return false ;                                      // No, return "no new insert"
+      }
+      else
+      {
+        sdInserted = sdinsNew ;                             // Remember status
+        if ( ! sdInserted )                                 // Card out?
+        {
+          dbgprint ( "SD card removed" ) ;
+          while ( ( p = xRingbufferReceive ( fnbuf,         // Flush filename list
+                                             &f0, 0 ) ) )
+          {
+            vRingbufferReturnItem ( fnbuf, p ) ;            // Return space to the buffer
+          }
+          claimSPI ( "SDend" ) ;                            // Claim SPI bus
+          SD.end() ;                                        // Unmount SD card
+          releaseSPI() ;                                    // Release SPI bus
+          SD_okay = false ;                                 // Not okay anymore
+        }
+        else
+        {
+          dbgprint ( "SD card inserted" ) ;
+          SD_okay = mount_SDCARD ( ini_block.sd_cs_pin ) ;  // Try to mount
+        }
+        return SD_okay ;                                    // Return result
+      }
+    }
+    else
+    {
+      if ( SD_okay )                                        // Card already mounted?
+      {
+        return false ;                                      // Yes, no change
+      }
+      while ( ( p = xRingbufferReceive ( fnbuf,             // Flush filename list
+                                         &f0, 0 ) ) )
+      {
+        vRingbufferReturnItem ( fnbuf, p ) ;                // Return space to the buffer
+      }
+      claimSPI ( "SDend2" ) ;                               // Claim SPI bus
+      SD.end() ;                                            // Unmount SD card if needed
+      releaseSPI() ;                                        // Release SPI bus
+      SD_okay = mount_SDCARD ( ini_block.sd_cs_pin ) ;      // Try to mount
+      return SD_okay ;                                      // Return result
+    }
+  }
+
+
+  //**************************************************************************************************
+  //                                       S D T A S K                                               *
+  //**************************************************************************************************
+  // This task will constantly try to fill the ringbuffer with filenames on SD.                      *
+  //**************************************************************************************************
+  void SDtask ( void * parameter )
+  {
+    fnbuf = xRingbufferCreate ( RINGBUFFERSPACE,          // Create 15k ringbuffer
+                                RINGBUF_TYPE_NOSPLIT ) ;
+    if ( fnbuf == nullptr )
+    {
+      dbgprint ( "No space for SD ringbuffer" ) ;
+      vTaskDelete ( NULL ) ;                              // End this task
+    }
+    vTaskDelay ( 20000 / portTICK_PERIOD_MS ) ;           // Start delay
+    while ( true )                                        // Endless task
+    {
+      SDInsertCheck() ;                                   // See if new card is inserted
+      while ( SD_okay )
+      {
+        SD_okay = getsdtracks ( "/", SD_MAXDEPTH ) ;      // Get filenames, store in the ringbuffer
+      }
+      vTaskDelay ( 100 / portTICK_PERIOD_MS ) ;           // Allow other tasks
     }
   }
 
@@ -337,7 +359,9 @@ struct mp3spec_t                                      // For List of mp3 file on
     tftset ( 2, "Playing from local file" ) ;                 // Assume no ID3
     p = (char*)path.c_str() + 1 ;                             // Point to filename (after the slash)
     showstreamtitle ( p, true ) ;                             // Show the filename as title (middle part)
+    claimSPI ( "sdopen1" ) ;                              // Claim SPI bus
     mp3file = SD.open ( path ) ;                              // Open the file
+    releaseSPI() ;                                        // Release SPI bus
     if ( path.endsWith ( ".mu3" ) )                           // Is it a playlist?
     {
       return ;                                                // Yes, no ID's, but leave file open
@@ -453,41 +477,37 @@ struct mp3spec_t                                      // For List of mp3 file on
   //**************************************************************************************************
   bool mount_SDCARD ( int8_t csPin )
   {
-    bool       SD_okay = false ;                           // True if SD card in place and readable
+    static const char* lastmsg = NULL ;                     // Last debug message
+    const char*        newmsg = NULL ;                      // New debug message
 
-    if ( csPin >= 0 )                                      // SD configured?
+    if ( csPin >= 0 )                                       // SD configured?
     {
-      if ( !SD.begin ( csPin, SPI, SDSPEED ) )             // Yes, try to init SD card driver
+      claimSPI ( "mountSD" ) ;                              // Claim SPI bus
+      SD_okay = SD.begin ( csPin, SPI, SDSPEED ) ;          // Yes, try to init SD card driver
+      releaseSPI() ;                                        // Release SPI bus
+      if ( ! SD_okay )                                      // Success?
       {
-        dbgprint ( "SD Card Mount Failed!" ) ;             // No success, check formatting (FAT)
+        newmsg = "SD Card Mount Failed!" ;                  // No success, check formatting (FAT)
       }
       else
       {
-        SD_okay = ( SD.cardType() != CARD_NONE ) ;         // See if known card
-        if ( !SD_okay )
+        SD_okay = ( SD.cardType() != CARD_NONE ) ;          // See if known card
+        if ( SD_okay )
         {
-          dbgprint ( "No SD card attached" ) ;             // Card not readable
+          newmsg = "SD card attached" ;                     // Yes, card is okay
+        }
+        else
+        {
+          newmsg = "No SD card attached!" ;                 // Card not readable
         }
       }
     }
+    if ( newmsg != lastmsg )                                // Status change?
+    {
+      dbgprint ( newmsg ) ;                                 // Yes, print message
+      lastmsg = newmsg ;                                    // Remember last message
+    }
     return SD_okay ;
-  }
-
-
-  //**************************************************************************************************
-  //                                       S C A N _ S D C A R D                                     *
-  //**************************************************************************************************
-  // Scan the SD card for mp3-files.                                                                 *
-  //**************************************************************************************************
-  void scan_SDCARD()
-  {
-    clearFileList() ;                                   // Create list with names and count
-    dbgprint ( "Locate mp3 files on SD, "
-              "may take a while..." ) ;
-    getsdtracks ( "/", SD_MAXDEPTH ) ;                  // Build file list
-    dbgprint ( "Space %d", ESP.getFreeHeap() ) ;
-    dbgprint ( "%d tracks on SD", SD_filecount ) ;      // Show number of files
-    getFirstSDFileName() ;                              // Point to first entry
   }
 
 

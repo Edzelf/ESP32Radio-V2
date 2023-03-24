@@ -190,18 +190,19 @@ void playChunk ( i2s_port_t i2s_num, const uint8_t* chunk )
     }
     else
     {
-      #ifdef DEC_HELIX_INT                            // Internal DAC used?
-        for ( int i = 0 ; i < smpwords ; i++ )        // Yes, modify output buffer because
-        {
-          outbuf[i] = ( outbuf[i] * vol / 100 ) +     // Scale according to volume
-                      0x8000 ;                        // internal DAC is not signed
-        }
-      #endif
-      #ifdef DEC_HELIX
-        for ( int i = 0 ; i < smpwords ; i++ )        // Volume scaling
-        {
-          outbuf[i] = outbuf[i] * vol / 100 ;         // Scale according to volume
-        }
+      #ifdef DEC_HELIX                                // Helix conversion?
+        #ifdef DEC_HELIX_INT                          // Internal DAC used?
+          for ( int i = 0 ; i < smpwords ; i++ )      // Yes, modify output buffer because
+          {                                           // internal DAC is not signed
+            outbuf[i] = ( outbuf[i] * vol / 100 ) +   // Scale according to volume
+                          0x8000 ;
+          }
+        #else
+          for ( int i = 0 ; i < smpwords ; i++ )        // Volume scaling
+          {
+            outbuf[i] = outbuf[i] * vol / 100 ;         // Scale according to volume
+          }
+        #endif
       #endif
       #ifdef DEC_HELIX_AI
         //                                            // Volume will be set directly

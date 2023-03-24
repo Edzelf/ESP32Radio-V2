@@ -11,13 +11,13 @@
 
 //#define ETHERNET                                        // For wired Ethernet (WT32-ETH-01 or similar)
 
-#define FIXEDWIFI "MYSSID/MYPASSWORD"                     // Add a fixed SSID to the list (WiFi only)
+#define FIXEDWIFI "LAPTOP-ED/wifiwifi"                    // Add a fixed SSID to the list (WiFi only)
 
 // Define (just one) type of MP3/AAC decoder
-#define DEC_VS1053                                      // Hardware decoder for MP3, AAC, OGG
+#define DEC_VS1053                                        // Hardware decoder for MP3, AAC, OGG
 //#define DEC_VS1003                                      // Hardware decoder for MP3
 //#define DEC_HELIX                                       // Software decoder for MP3, AAC. I2S output
-//#define DEC_HELIX_AI                                    // Software decoder for AI Audio kip (AC101)
+//#define DEC_HELIX_AI                                    // Software decoder for AI Audio kit (AC101)
 //#define DEC_HELIX_INT                                   // Software decoder for MP3, AAC. DAC output
                                                           // Needs platform = espressif32@3.1.0 !!!!
 
@@ -39,9 +39,3 @@
 
 // End of configuration parameters.
 
-// DEC_HELIX_INT does not seem to work with higher versions of framework.  Do a test.
-#ifdef DEC_HELIX_INT
-  #if ESP_ARDUINO_VERSION_MAJOR >= 2
-    #error Internal DAC will not work in this version of the platform.  Use espressif32@3.1.0.
-  #endif
-#endif

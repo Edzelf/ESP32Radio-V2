@@ -1,0 +1,10 @@
+# Special 4MB partition map.  app0/1 have some more space,
+# SPIFFS has less space than default setting
+#
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     0x9000,  0x5000,
+otadata,  data, ota,     0xe000,  0x2000,
+app0,     app,  ota_0,   0x10000, 0x170000,
+app1,     app,  ota_1,   0x180000,0x170000,
+spiffs,   data, spiffs,  0x2F0000,0x110000,
+#                END =   0x400000

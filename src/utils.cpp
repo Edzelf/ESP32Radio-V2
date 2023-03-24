@@ -6,7 +6,8 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-bool dbgsw = 1 ;                                      // Debug is on
+SemaphoreHandle_t dbgsem = NULL ;
+bool              dbgsw = 1 ;                          // Debug on by default
 
 
 //**************************************************************************************************
@@ -31,14 +32,26 @@ void dbgprint ( const char* format, ... )
   static char sbuf[DEBUG_BUFFER_SIZE] ;                // For debug lines
   va_list varArgs ;                                    // For variable number of params
 
+  if ( ! dbgsem )                                      // Semaphore already initialized?
+  {
+    dbgsem = xSemaphoreCreateMutex() ;                 // Create semaphore
+  }
+  if ( xSemaphoreTake ( dbgsem, 20 ) != pdTRUE  )      // Claim resource
+  {
+    return ;                                           // Not available
+  }
   va_start ( varArgs, format ) ;                       // Prepare parameters
   vsnprintf ( sbuf, sizeof(sbuf), format, varArgs ) ;  // Format the message
   va_end ( varArgs ) ;                                 // End of using parameters
   if ( dbgsw )                                         // DEBUG on?
   {
-    Serial.print ( "D: " ) ;                           // Yes, print prefix and info
+    //Serial.print ( "D: " ) ;                           // Yes, print prefix and info
+    Serial.printf ( "D: %d/%d - ",
+      heap_caps_get_largest_free_block ( MALLOC_CAP_8BIT ),
+      ESP.getFreeHeap() ) ;
     Serial.println ( sbuf ) ;
   }
+  xSemaphoreGive ( dbgsem ) ;                          // Release resource
 }
 
 
