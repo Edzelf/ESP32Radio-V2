@@ -8,7 +8,7 @@
 #include <Preferences.h>
 
 // Note: Namespace name is limited to 15 chars.  Same name must be used in ESP32-radio.
-#define NAME "ESP32Radio"
+#define NAME "ESP32-Radio"
 // Adjust size of buffer to the longest expected string for nvsgetstr
 #define NVSBUFSIZE 150
 
