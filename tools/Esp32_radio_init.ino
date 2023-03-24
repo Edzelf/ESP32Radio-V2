@@ -3,12 +3,13 @@
 //********************************************************************************************
 // 27-04-2017, ES: First set-up, derived from preferences example sketch.                    *
 // 11-02-2019, ES: names of I/O pins changed.                                                *
+// 24-03-2023, ES: cahnge definition of "NAME".                                              *
 //********************************************************************************************
 
 #include <Preferences.h>
 
 // Note: Namespace name is limited to 15 chars.  Same name must be used in ESP32-radio.
-#define NAME "ESP32Radio"
+#define NAME "ESP32-Radio"
 // Adjust size of buffer to the longest expected string for nvsgetstr
 #define NVSBUFSIZE 150
 
