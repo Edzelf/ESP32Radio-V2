@@ -1,6 +1,7 @@
 // helixfuncs.h
 // Functions for HELIX decoder.
 //
+// 26-04-2023, ES: correction setting disable_pin
 #define player_AdjustRate(a)                         // Not supported function
 #define player_setTone(a)                            // Not supported function
 
@@ -55,7 +56,7 @@ int16_t player_getVolume()
 //**************************************************************************************************
 // Initialize helix buffering.                                                                     *
 //**************************************************************************************************
-void helixInit ( uint8_t enable_pin, uint8_t disable_pin )
+void helixInit ( int8_t enable_pin, int8_t disable_pin )
 {
   dbgprint ( "helixInit called for %s, e is %d, "     // Show activity
              "d is %d",
@@ -65,15 +66,15 @@ void helixInit ( uint8_t enable_pin, uint8_t disable_pin )
   mp3bpnt = mp3buff ;                                 // Reset pointer
   mp3bcnt = 0 ;                                       // Buffer empty
   searchFrame = true ;                                // Start searching for frame
-  if ( enable_pin != 0xFF )                           // Enable pin defined?
+  if ( enable_pin >= 0 )                              // Enable pin defined?
   {
     pinMode ( enable_pin, OUTPUT ) ;                  // Yes, set pin to output
     digitalWrite ( enable_pin, HIGH ) ;               // Enable output
   }
-  if ( disable_pin != 0xFF )                          // Disable pin defined?
+  if ( disable_pin >= 0 )                             // Disable pin defined?
   {
     pinMode ( disable_pin, OUTPUT ) ;                 // Yes, set pin to output
-    digitalWrite ( enable_pin, LOW ) ;                // Enable output
+    digitalWrite ( disable_pin, LOW ) ;               // Enable output
   }
 }
 
