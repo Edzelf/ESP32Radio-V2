@@ -69,7 +69,6 @@ body {
     border: 1;
     border-radius: 5px;
     -webkit-border-radius: 5px;
-    -moz-border-radius: 5px;
     -webkit-appearance: none;
     border: 1px solid black;
     border-radius: 10px;
@@ -112,8 +111,6 @@ body {
  }
  
  textarea {
-   width: 80;
-   height: 25;
    border: 1px solid black;
    border-radius: 10px;
    padding: 5px;

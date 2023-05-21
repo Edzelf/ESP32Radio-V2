@@ -1,6 +1,7 @@
 // helixfuncs.h
 // Functions for HELIX decoder.
 //
+// 26-04-2023, ES: correction setting disable_pin
 #define player_AdjustRate(a)                         // Not supported function
 #define player_setTone(a)                            // Not supported function
 
@@ -55,7 +56,7 @@ int16_t player_getVolume()
 //**************************************************************************************************
 // Initialize helix buffering.                                                                     *
 //**************************************************************************************************
-void helixInit ( uint8_t enable_pin, uint8_t disable_pin )
+void helixInit ( int8_t enable_pin, int8_t disable_pin )
 {
   dbgprint ( "helixInit called for %s, e is %d, "     // Show activity
              "d is %d",
@@ -65,15 +66,15 @@ void helixInit ( uint8_t enable_pin, uint8_t disable_pin )
   mp3bpnt = mp3buff ;                                 // Reset pointer
   mp3bcnt = 0 ;                                       // Buffer empty
   searchFrame = true ;                                // Start searching for frame
-  if ( enable_pin != 0xFF )                           // Enable pin defined?
+  if ( enable_pin >= 0 )                              // Enable pin defined?
   {
     pinMode ( enable_pin, OUTPUT ) ;                  // Yes, set pin to output
     digitalWrite ( enable_pin, HIGH ) ;               // Enable output
   }
-  if ( disable_pin != 0xFF )                          // Disable pin defined?
+  if ( disable_pin >= 0 )                             // Disable pin defined?
   {
     pinMode ( disable_pin, OUTPUT ) ;                 // Yes, set pin to output
-    digitalWrite ( enable_pin, LOW ) ;                // Enable output
+    digitalWrite ( disable_pin, LOW ) ;               // Enable output
   }
 }
 
@@ -190,18 +191,19 @@ void playChunk ( i2s_port_t i2s_num, const uint8_t* chunk )
     }
     else
     {
-      #ifdef DEC_HELIX_INT                            // Internal DAC used?
-        for ( int i = 0 ; i < smpwords ; i++ )        // Yes, modify output buffer because
-        {
-          outbuf[i] = ( outbuf[i] * vol / 100 ) +     // Scale according to volume
-                      0x8000 ;                        // internal DAC is not signed
-        }
-      #endif
-      #ifdef DEC_HELIX
-        for ( int i = 0 ; i < smpwords ; i++ )        // Volume scaling
-        {
-          outbuf[i] = outbuf[i] * vol / 100 ;         // Scale according to volume
-        }
+      #ifdef DEC_HELIX                                // Helix conversion?
+        #ifdef DEC_HELIX_INT                          // Internal DAC used?
+          for ( int i = 0 ; i < smpwords ; i++ )      // Yes, modify output buffer because
+          {                                           // internal DAC is not signed
+            outbuf[i] = ( outbuf[i] * vol / 100 ) +   // Scale according to volume
+                          0x8000 ;
+          }
+        #else
+          for ( int i = 0 ; i < smpwords ; i++ )        // Volume scaling
+          {
+            outbuf[i] = outbuf[i] * vol / 100 ;         // Scale according to volume
+          }
+        #endif
       #endif
       #ifdef DEC_HELIX_AI
         //                                            // Volume will be set directly

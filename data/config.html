@@ -11,6 +11,7 @@
    <li><a class="pull-left" href="/index.html">Control</a></li>
    <li><a class="pull-left" href="/search.html">Search</a></li>
    <li><a class="pull-left active" href="/config.html">Config</a></li>
+   <li><a class="pull-left" href="/mp3play.html">MP3-player</a></li>
    <li><a class="pull-left" href="/about.html">About</a></li>
   </ul>
   <br><br><br>
@@ -111,7 +112,6 @@
         if ( xhr.readyState == XMLHttpRequest.DONE )
         {
           networks = xhr.responseText.split ( "|" ) ;
-          
           for ( i = 0 ; i < ( networks.length - 1 ) ; i++ )
           {
             opt = document.createElement( "OPTION" ) ;
