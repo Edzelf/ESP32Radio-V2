@@ -56,8 +56,8 @@ pin_tft_dc = 2                                       # GPIO Pin number for TFT "
 #
 pin_vs_cs = 5                                        # GPIO Pin number for VS1053 "CS"
 pin_vs_dcs = 32                                      # GPIO Pin number for VS1053 "DCS"
-pin_vs_dreq = 4                                      # GPIO Pin number for VS1053 "DREQ"
+pin_vs_dreq = 34                                     # GPIO Pin number for VS1053 "DREQ"
 #
 pin_i2s_bck = 5                                      # GPIO Pin number for I2S "BCK"
 pin_i2s_lck = 32                                     # GPIO Pin number for I2S "L(R)CK"
-pin_i2s_din = 4                                      # GPIO Pin number for I2S "DIN"
+pin_i2s_din = 34                                     # GPIO Pin number for I2S "DIN"
