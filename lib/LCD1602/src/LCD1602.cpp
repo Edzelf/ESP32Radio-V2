@@ -22,8 +22,6 @@
 #include <Wire.h>
 #include "LCD1602.h"
 
-char*       dbgprint ( const char* format, ... ) ;          // Print a formatted debug line
-
 scrseg_struct     LCD1602_tftdata[TFTSECS] =                // Screen divided in 4 segments
                       {
                         { false, WHITE,   0,  0, "" },      // 1 top line (dummy)
@@ -34,6 +32,8 @@ scrseg_struct     LCD1602_tftdata[TFTSECS] =                // Screen divided in
 
 
 LCD1602* LCD1602_tft = NULL ;
+
+const char*   LTAG = "LCD1602" ;                // For debugging
 
 //***********************************************************************************************
 //                                L C D 1 6 0 2  write functions                                *
@@ -194,7 +194,7 @@ void LCD1602::reset()
 // {
 //   byte error, address ;
 
-//   dbgprint ( "Scanning I2C bus..." ) ;
+//   ESP_LOGI ( LTAG, "Scanning I2C bus..." ) ;
 
 //   for ( address = 1 ; address < 127 ; address++ ) 
 //   {
@@ -202,11 +202,11 @@ void LCD1602::reset()
 //     error = Wire.endTransmission() ;
 //     if ( error == 0 )
 //     {
-//       dbgprint ( "I2C device 0x%02X found", address ) ;
+//       ESP_LOGI ( LTAG, "I2C device 0x%02X found", address ) ;
 //     }
 //     else if ( error == 4 ) 
 //     {
-//       dbgprint ( "Error 4 at address 0x%02X", address ) ;
+//       ESP_LOGE ( LTAG, "Error 4 at address 0x%02X", address ) ;
 //     }    
 //   }
 // }
@@ -223,7 +223,7 @@ LCD1602::LCD1602 ( int8_t sda, int8_t scl )
 
   if ( ! Wire.begin ( sda, scl ) )                             // Init I2c
   {
-    dbgprint ( "I2C driver install error!" ) ;
+    ESP_LOGE ( LTAG, "I2C driver install error!" ) ;
   }
   else
   {
@@ -232,7 +232,7 @@ LCD1602::LCD1602 ( int8_t sda, int8_t scl )
     error = Wire.endTransmission() ;
     if ( error )
     {
-      dbgprint ( "Display not found on I2C 0x%02X",
+      ESP_LOGE ( LTAG, "Display not found on I2C 0x%02X",
                   LCD_I2C_ADDRESS ) ;
     }    
   }
@@ -253,14 +253,14 @@ dsp_str dline[2] = { { "", 0, 0, 0 },
 
 bool LCD1602_dsp_begin ( int8_t sda, int8_t scl )
 {
-  dbgprint ( "Init LCD1602, I2C pins %d,%d", sda, scl ) ;
+  ESP_LOGI ( LTAG, "Init LCD1602, I2C pins %d,%d", sda, scl ) ;
   if ( ( sda >= 0 ) && ( scl >= 0 ) )
   {
     LCD1602_tft = new LCD1602 ( sda, scl ) ;            // Create an instance for TFT
   }
   else
   {
-    dbgprint ( "Init LCD1602 failed!" ) ;
+    ESP_LOGE ( LTAG, "Init LCD1602 failed!" ) ;
   }
   return ( LCD1602_tft != NULL ) ;
 }
@@ -278,7 +278,7 @@ void LCD1602_dsp_update_line ( uint8_t lnr )
 
   p = dline[lnr].str.c_str() ;
   dline[lnr].len = strlen ( p ) ;
-  //dbgprint ( "Strlen is %d, str is %s", len, p ) ;
+  //ESP_LOGI ( LTAG, "Strlen is %d, str is %s", len, p ) ;
   if ( dline[lnr].len > 16 )
   {
     if ( dline[lnr].pos >= dline[lnr].len )

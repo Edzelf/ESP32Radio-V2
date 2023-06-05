@@ -8,8 +8,6 @@
 
 #include "ILI9341.h"
 
-char*       dbgprint ( const char* format, ... ) ;          // Print a formatted debug line
-
 // Data to display.  There are TFTSECS sections
 scrseg_struct     ILI9341_tftdata[TFTSECS] =                        // Screen divided in 3 segments + 1 overlay
 {                                                           // One text line is 8 pixels

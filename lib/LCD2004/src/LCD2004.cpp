@@ -28,7 +28,6 @@
 #include "LCD2004.h"
 #include <time.h>
 
-char*       dbgprint ( const char* format, ... ) ;          // Print a formatted debug line
 extern      struct tm timeinfo ;                            // Will be filled by NTP server
 
 
@@ -41,17 +40,19 @@ scrseg_struct     LCD2004_tftdata[TFTSECS] =                // Screen divided in
 } ;
 
 LCD2004* LCD2004_tft = NULL ;
+const char*   LTAG = "LCD1602" ;                            // For debugging
+
 
 bool LCD2004_dsp_begin (  int8_t sda, int8_t scl  )
 {
-  dbgprint ( "Init LCD2004, I2C pins %d,%d", sda, scl ) ;
+  ESP_LOGI ( LTAG, "Init LCD2004, I2C pins %d,%d", sda, scl ) ;
   if ( ( sda >= 0 ) && ( scl >= 0 ) )
   {
     LCD2004_tft = new LCD2004 ( sda, scl ) ;                // Create an instance for TFT
   }
   else
   {
-    dbgprint ( "Init LCD2004 failed!" ) ;
+    ESP_LOGE ( LTAG, "Init LCD2004 failed!" ) ;
   }
   return ( LCD2004_tft != NULL ) ;
 }
@@ -220,7 +221,7 @@ void LCD2004::reset()
 // {
 //   byte error, address ;
 
-//   dbgprint ( "Scanning I2C bus..." ) ;
+//   ESP_LOGI ( LTAG, "Scanning I2C bus..." ) ;
 
 //   for ( address = 1 ; address < 127 ; address++ ) 
 //   {
@@ -228,11 +229,11 @@ void LCD2004::reset()
 //     error = Wire.endTransmission() ;
 //     if ( error == 0 )
 //     {
-//       dbgprint ( "I2C device 0x%02X found", address ) ;
+//       ESP_LOGI ( LTAG, "I2C device 0x%02X found", address ) ;
 //     }
 //     else if ( error == 4 ) 
 //     {
-//       dbgprint ( "Error 4 at address 0x%02X", address ) ;
+//       ESP_LOGE ( LTAG, "Error 4 at address 0x%02X", address ) ;
 //     }    
 //   }
 // }
@@ -249,7 +250,7 @@ LCD2004::LCD2004 ( int8_t sda, int8_t scl )
 
   if ( ! Wire.begin ( sda, scl ) )                             // Init I2c
   {
-    dbgprint ( "I2C driver install error!" ) ;
+    ESP_LOGE ( LTAG, "I2C driver install error!" ) ;
   }
   else
   {
@@ -258,7 +259,7 @@ LCD2004::LCD2004 ( int8_t sda, int8_t scl )
     error = Wire.endTransmission() ;
     if ( error )
     {
-      dbgprint ( "Display not found on I2C 0x%02X",
+      ESP_LOGE ( LTAG, "Display not found on I2C 0x%02X",
                   LCD_I2C_ADDRESS ) ;
     }    
   }
@@ -294,7 +295,7 @@ void LCD2004_dsp_update_line ( uint8_t lnr )
 
   p = line->str.c_str() ;                             // Get pointer to string
   line->len = strlen ( p ) ;                          // Get string length
-  //dbgprint ( "Str %d, len is %d, str is %s",
+  //ESP_LOGI ( LTAG, "Str %d, len is %d, str is %s",
   //           lnr,
   //           line->len, p ) ;
   if ( line->len > dsp_getwidth() )                   // Full string fits?
@@ -393,7 +394,7 @@ void LCD2004_displayvolume ( uint8_t vol )
 
   if ( vol != oldvol )                                // Volume changed?
   {
-    dbgprint ( "Update volume to %d", vol ) ;
+    ESP_LOGI ( LTAG, "Update volume to %d", vol ) ;
     oldvol = vol ;                                    // Remember for next compare
     pos = map ( vol, 0, 100, 0, dsp_getwidth() ) ;    // Compute end position on TFT
     for ( int i = 0 ; i < dsp_getwidth() ; i++ )      // Set oldstr to dots

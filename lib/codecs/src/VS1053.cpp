@@ -86,21 +86,13 @@ bool VS1053::sdi_send_buffer ( uint8_t* data, size_t len )
   return data_request() ;                           // True if more data can be stored in fifo
 }
 
-void VS1053::sdi_send_fillers ( size_t len )
+void VS1053::sdi_send_fillers ( uint8_t numchunks )
 {
-  size_t chunk_length ;                             // Length of chunk 32 byte or shorter
-
-  while ( len )                                     // More to do?
+  while ( numchunks-- )                             // More to do?
   {
     await_data_request() ;                          // Wait for space available
-    chunk_length = len ;
-    if ( len > vs1053_chunk_size )
-    {
-      chunk_length = vs1053_chunk_size ;
-    }
-    len -= chunk_length ;
     data_mode_on() ;                                // Start data-mode transaction
-    while ( chunk_length-- )
+    for ( uint8_t i = 0 ; i < vs1053_chunk_size ; i++ )
     {
       SPI.write ( endFillByte ) ;
     }
@@ -266,7 +258,7 @@ void VS1053::setTone ( uint8_t *rtone )                 // Set bass/treble (4 ni
 
 void VS1053::startSong()
 {
-  sdi_send_fillers ( 2052 ) ;
+  sdi_send_fillers ( 60 ) ;
   output_enable ( true ) ;                              // Enable amplifier through shutdown pin(s)
 }
 
@@ -280,17 +272,17 @@ void VS1053::stopSong()
   uint16_t modereg ;                                    // Read from mode register
   int      i ;                                          // Loop control
 
-  sdi_send_fillers ( 2052 ) ;
+  sdi_send_fillers ( 60 ) ;                             // Send 60 * 32 fillers
   output_enable ( false ) ;                             // Disable amplifier through shutdown pin(s)
   delay ( 10 ) ;
   write_register ( SCI_MODE, _BV ( SM_SDINEW ) | _BV ( SM_CANCEL ) ) ;
   for ( i = 0 ; i < 20 ; i++ )
   {
-    sdi_send_fillers ( 32 ) ;
+    sdi_send_fillers ( 1 ) ;                            // Send 32 fillers
     modereg = read_register ( SCI_MODE ) ;              // Read mode status
     if ( ( modereg & _BV ( SM_CANCEL ) ) == 0 )         // SM_CANCEL will be cleared when finished
     {
-      sdi_send_fillers ( 2052 ) ;
+      sdi_send_fillers ( 60 ) ;
       ESP_LOGI ( VTAG, "Song stopped correctly after %d msec", i * 10 ) ;
       return ;
     }

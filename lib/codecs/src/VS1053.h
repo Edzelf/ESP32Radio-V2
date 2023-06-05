@@ -66,7 +66,7 @@ class VS1053
     uint16_t    read_register ( uint8_t _reg ) const ;
     void        write_register ( uint8_t _reg, uint16_t _value ) const ;
     inline bool sdi_send_buffer ( uint8_t* data, size_t len ) ;
-    void        sdi_send_fillers ( size_t length ) ;
+    void        sdi_send_fillers ( uint8_t numchunks ) ;
     void        wram_write ( uint16_t address, uint16_t data ) ;
     uint16_t    wram_read ( uint16_t address ) ;
     void        output_enable ( bool ena ) ;             // Enable amplifier through shutdown pin(s)

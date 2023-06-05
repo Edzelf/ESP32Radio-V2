@@ -5,11 +5,11 @@
 //**************************************************************************************************
 #include "NEXTION.h"
 
-char*       dbgprint ( const char* format, ... ) ;          // Print a formatted debug line
 char        strbuf[40] ;                                    // Buffer for incomplete line
 
 HardwareSerial*   nxtserial = NULL ;                        // Serial port for NEXTION
 void*             NEXTION_tft = (void*)1 ;                  // Dummy declaration
+const char*       NTAG = "NEXTION" ;                        // For debugging
 
 // Data to display.  There are TFTSECS sections
 scrseg_struct     tftdata[TFTSECS] =                        // Screen divided in 3 segments + 1 overlay
@@ -24,14 +24,14 @@ uint8_t pagenr = 0 ;
 
 void NEXTION_nextioncmd ( const char *cmd )
 {
-  dbgprint ( "Nextion command %s", cmd ) ;
+  ESP_LOGI ( NTAG, "Nextion command %s", cmd ) ;
   nxtserial->printf ( "%s\xFF\xFF\xFF", cmd ) ;
 }
 
 
 bool NEXTION_dsp_begin ( int8_t rx, int8_t tx )
 {
-  dbgprint ( "Init Nextion, pins %d, %d", rx, tx ) ;
+  ESP_LOGI ( NTAG, "Init Nextion, pins %d, %d", rx, tx ) ;
   nxtserial = new HardwareSerial ( 2 ) ;
   nxtserial->begin ( 115200, SERIAL_8N1, rx, tx ) ;         // Initialize serial port
   NEXTION_nextioncmd ( "cls BLACK" ) ;                      // Erase screen, non vital
@@ -56,7 +56,7 @@ void NEXTION_dsp_println ( const char* str )
     else
     {
       lnnr = ( lnnr % 10 ) + 1 ;
-      dbgprint ( "NEXTION output '%s' to %d",
+      ESP_LOGI ( NTAG, "NEXTION output '%s' to %d",
                  str, lnnr ) ;
       nxtserial->printf ( "t%d.txt=\"%s\"\xFF\xFF\xFF", lnnr, str ) ;
     }
@@ -93,7 +93,7 @@ void NEXTION_dsp_update ( bool a )                          // Updates to the ph
     {
       if ( tftdata[inx].update_req )
       {
-        dbgprint ( "Nextion t%d.txt=\"%s\"", inx, tftdata[inx].str.c_str() ) ; 
+        ESP_LOGI ( NTAG, "Nextion t%d.txt=\"%s\"", inx, tftdata[inx].str.c_str() ) ; 
         nxtserial->printf ( "t%d.txt=\"%s\"\xFF\xFF\xFF", inx, tftdata[inx].str.c_str() ) ;
         tftdata[inx].update_req = false ;
       }

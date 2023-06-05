@@ -10,7 +10,6 @@
 #include <string.h>
 #include "oled.h"
 
-char*       dbgprint ( const char* format, ... ) ;    // Print a formatted debug line
 
 uint16_t     oledtyp ;                                // Type of OLED
 OLED*        tft ;                                    // Object for display
@@ -22,6 +21,8 @@ scrseg_struct OLED_tftdata[TFTSECS] =                 // Screen divided in 3 seg
   { false, GREEN,  40, 22, "" }                       // 3 lines at the bottom for rotary encoder
 } ;
 
+const char*   LTAG = "OLED" ;                            // For debugging
+
 
 //***********************************************************************************************
 //                                  O L E D _ D S P _ B E G I N                                 *
@@ -31,7 +32,7 @@ scrseg_struct OLED_tftdata[TFTSECS] =                 // Screen divided in 3 seg
 bool oled_dsp_begin ( int8_t sda_pin, int8_t scl_pin, uint16_t olt )
 {
   oledtyp = olt ;                                  // Save OLED type
-  dbgprint ( "Init OLED %d, I2C pins %d,%d",
+  ESP_LOGI ( LTAG, "Init OLED %d, I2C pins %d,%d",
              oledtyp,
              sda_pin,
              scl_pin ) ;
@@ -43,7 +44,7 @@ bool oled_dsp_begin ( int8_t sda_pin, int8_t scl_pin, uint16_t olt )
   }
   else
   {
-    dbgprint ( "Init OLED failed!" ) ;
+    ESP_LOGE ( LTAG, "Init OLED failed!" ) ;
   }
   return ( tft != NULL ) ;
 }
