@@ -50,7 +50,6 @@ struct scrseg_struct                                  // For screen segments
 #define dsp_getwidth()      320                                    // Get width of screen
 #define dsp_getheight()     240                                    // Get height of screen
 #define dsp_update(a)       NEXTION_dsp_update(a)                  // Updates to the physical screen
-#define dsp_usesSPI()       false                                  // Does not use SPI
 #define dsp_begin           NEXTION_dsp_begin                      // Init driver
 
 

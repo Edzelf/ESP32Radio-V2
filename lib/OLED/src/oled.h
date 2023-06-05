@@ -99,7 +99,6 @@ extern scrseg_struct OLED_tftdata[TFTSECS] ;          // Screen divided in segme
 #define dsp_getwidth()          128                                // Get width of screen
 #define dsp_getheight()         64                                 // Get height of screen
 #define dsp_update(a)           tft->display()                     // Updates to the physical screen
-#define dsp_usesSPI()           false                              // Does not use SPI
 #define dsp_begin               oled_dsp_begin                     // Init driver
 #define displayvolume           oled_displayvolume
 #define displaybattery          oled_displaybattery

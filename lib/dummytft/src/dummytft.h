@@ -30,7 +30,6 @@
 #define dsp_getwidth()      0                                      // Get width of screen
 #define dsp_getheight()     0                                      // Get height of screen
 #define dsp_update(a)                                              // Updates to the physical screen
-#define dsp_usesSPI()       false                                  // Does not use SPI
 #define dsp_begin(a)        false
 
 #define tftdata             dummytft_tftdata

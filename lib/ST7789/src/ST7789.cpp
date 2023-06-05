@@ -9,10 +9,10 @@
 Adafruit_ST7789*     ST7789_tft ;                          // For instance of display driver
 scrseg_struct        ST7789_tftdata[TFTSECS] =             // Screen divided in 3 segments + 1 overlay
                       {                                    // One text line is 8 pixels
-                        { false, GRAY,    0,  16,  "" },   // 1 top line
+                        { false, GREY,    0,  16,  "" },   // 1 top line
                         { false, CYAN,    40, 128, "" },   // 8 lines in the middle
                         { false, YELLOW, 180,  64, "" },   // 4 lines at the bottom
-                        { false, GRAY,   180,  64, "" }    // 4 lines at the bottom for rotary encoder
+                        { false, GREY,   180,  64, "" }    // 4 lines at the bottom for rotary encoder
                       } ;
 
 

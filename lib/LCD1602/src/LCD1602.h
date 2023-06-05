@@ -39,7 +39,7 @@
 #define MAGENTA RED | BLUE
 #define YELLOW  RED | GREEN
 #define WHITE   RED | GREEN | BLUE
-#define GRAY    RED | GREEN | BLUE
+#define GREY    RED | GREEN | BLUE
 
 #define DEFTXTSIZ   1                        // Default text size
 
@@ -77,7 +77,6 @@
 #define dsp_erase()         LCD1602_tft->sclear()                  // Clear the screen
 #define dsp_getwidth()      16                                     // Get width of screen
 #define dsp_getheight()     2                                      // Get height of screen
-#define dsp_usesSPI()       false                                  // Does not use SPI
 #define dsp_begin           LCD1602_dsp_begin                      // Init driver
 #define dsp_update          LCD1602_dsp_update                     // Update one line
 

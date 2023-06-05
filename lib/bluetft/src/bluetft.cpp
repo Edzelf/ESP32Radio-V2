@@ -21,6 +21,10 @@ scrseg_struct        bluetft_tftdata[TFTSECS] =             // Screen divided in
 
 bool bluetft_dsp_begin ( int8_t cs, int8_t dc )
 {
+  if ( cs < 0 || dc < 0 )
+  {
+    return false ;                                                  // Wrong pin configuration
+  }
   if ( ( bluetft_tft = new Adafruit_ST7735 ( cs, dc , -1 ) ) )      // Create an instant for TFT
   {
     // Uncomment one of the following initR lines for ST7735R displays

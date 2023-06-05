@@ -26,7 +26,7 @@
 #define MAGENTA RED | BLUE
 #define YELLOW  RED | GREEN
 #define WHITE   RED | BLUE | GREEN
-#define GRAY    0x7bf0
+#define GREY    0x7bf0
 
 #define DEFTXTSIZ   1                                 // Default text size
 
@@ -62,7 +62,6 @@ extern Adafruit_ILI9341*    ILI9341_tft ;                                 // For
 #define dsp_getwidth()          320                                       // Adjust to your display
 #define dsp_getheight()         240                                       // Get height of screen
 #define dsp_update(a)                                                     // Updates to the physical screen
-#define dsp_usesSPI()           true                                      // Does use SPI
 #define dsp_begin               ILI9341_dsp_begin                         // Init driver
 
 extern scrseg_struct     ILI9341_tftdata[TFTSECS] ;                       // Screen divided in segments

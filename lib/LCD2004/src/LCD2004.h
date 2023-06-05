@@ -88,7 +88,6 @@ extern scrseg_struct     LCD2004_tftdata[TFTSECS] ;                // Screen div
 #define dsp_erase()         LCD2004_tft->sclear()                  // Clear the screen
 #define dsp_getwidth()      20                                     // Get width of screen
 #define dsp_getheight()     4                                      // Get height of screen
-#define dsp_usesSPI()       false                                  // Does not use SPI
 #define dsp_begin           LCD2004_dsp_begin                      // Init driver
 #define dsp_update          LCD2004_dsp_update                     // Update one line
 #define tftdata             LCD2004_tftdata

@@ -22,7 +22,7 @@
 #define MAGENTA RED | BLUE
 #define YELLOW  RED | GREEN
 #define WHITE   RED | BLUE | GREEN
-#define GRAY    0x7bf0
+#define GREY    0x7bf0
 
 #define DEFTXTSIZ  2                                  // Default text size
 
@@ -59,7 +59,6 @@ extern Adafruit_ST7789*     ST7789_tft ;                                 // For 
 #define dsp_getwidth()          240                                      // Adjust to your display
 #define dsp_getheight()         240                                      // Get height of screen
 #define dsp_update(a)                                                    // Updates to the physical screen
-#define dsp_usesSPI()           true                                     // Does use SPI
 #define dsp_begin               ST7789_dsp_begin                         // Init driver
 #define dsp_init()              ST7789_tft->init ( 240, 240 ) ;
 
