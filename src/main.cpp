@@ -99,10 +99,11 @@
 // 10-05-2023, ES: SD card files stored on the SDcard.
 // 19-05-2023, ES: Mute and unmute with 2 buttons or commands.
 // 22-05-2023, ES: Use internal mutex for SPI bus.
+// 16-06-2023, ES: Add sleep commmeand.
 
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Mon, 05 Jun 2023 08:40:00 GMT"
+#define VERSION     "Fri, 16 Jun 2023 07:30:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 //#include <esp_log.h>
@@ -368,6 +369,7 @@ bool                 reqtone = false ;                   // New tone setting req
 bool                 muteflag = false ;                  // Mute output
 bool                 resetreq = false ;                  // Request to reset the ESP32
 bool                 testreq = false ;                   // Request to print test info
+bool                 sleepreq = false ;                  // Request for deep sleep
 bool                 eth_connected = false ;             // Ethernet connected or not
 bool                 NetworkFound = false ;              // True if WiFi network connected
 bool                 mqtt_on = false ;                   // MQTT in use
@@ -2105,7 +2107,7 @@ void scanserial2()
           if ( cmd[0] == 0x70 )                    // Button pressed?
           { 
             reply = analyzeCmd ( cmd + 1 ) ;       // Analyze command and handle it
-            ESP_LOGI ( TAG, reply ) ;              // Result for debugging
+            ESP_LOGI ( TAG, "%s", reply ) ;        // Result for debugging
           }
           serialcmd = "" ;                         // Prepare for new command
         }
@@ -2648,8 +2650,8 @@ void setup()
   dsp_ok = dsp_begin ( INIPARS ) ;                       // Init display
   if ( dsp_ok )                                          // Init okay?
   {
-    dsp_setRotation() ;                                  // Yes, use landscape format
     dsp_erase() ;                                        // Clear screen
+    dsp_setRotation() ;                                  // Usse landscape format
     dsp_setTextSize ( DEFTXTSIZ ) ;                      // Small character font
     dsp_setTextColor ( GREY ) ;                          // Info in grey
     dsp_setCursor ( 0, 0 ) ;                             // Top of screen
@@ -3417,6 +3419,16 @@ void loop()
     timerEnd ( timer ) ;
     ESP.restart() ;                                 // Reboot
   }
+  if ( sleepreq )                                   // Request for deep sleep?
+  {
+  if ( dsp_ok )                                     // TFT configured?
+    {
+      dsp_erase() ;                                 // Yes, clear screen
+      dsp_update ( true ) ;                         // To physical screen
+    }
+    esp_deep_sleep_start() ;                        // Yes, sleep until reset
+    // No return here...
+  }
   scanserial() ;                                    // Handle serial input
   scanserial2() ;                                   // Handle serial input from NEXTION (if active)
   scandigital() ;                                   // Scan digital inputs
@@ -4020,9 +4032,9 @@ const char* analyzeCmd ( const char* str )
 //   station    = <mp3 stream>              // Select new station (will not be saved)              *
 //   station    = <URL>.mp3                 // Play standalone .mp3 file (not saved)               *
 //   station    = <URL>.m3u                 // Select playlist (will not be saved)                 *
-//   stop                                   // Stop playing                                        *
 //   resume                                 // Resume playing                                      *
 //   (un)mute                               // Mute/unmute the music                               *
+//   sleep                                  // Go into deep sleep mode                             *
 //   wifi_00    = mySSID/mypassword         // Set WiFi SSID and password *)                       *
 //   mqttbroker = mybroker.com              // Set MQTT broker to use *)                           *
 //   mqttprefix = XP93g                     // Set MQTT broker to use                              *
@@ -4151,6 +4163,10 @@ const char* analyzeCmd ( const char* par, const char* val )
               "Select %s",                            // Format reply
               value.c_str() ) ;
     utf8ascii_ip ( reply ) ;                          // Remove possible strange characters
+  }
+  else if ( argument == "sleep" )                     // Sleep request?
+  {
+    sleepreq = true ;                                 // Yes, set request flag
   }
   else if ( argument == "status" )                    // Status request
   {
