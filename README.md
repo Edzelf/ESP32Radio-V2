@@ -5,6 +5,8 @@ New version of the well known ESP32 Radio.  Now optional I2S output!
 - SD cards supported, but still experimental.
 
 Updates:
+- 09-oct-2023: Reduced error messages caused by uninitialized GPIO numbers.
+- 16-may-2023: Added sleep command.
 - 05-may-2023: SD card file stored on SD card, mute/unmute, better mutex.
 - 24-mar-2023: Code clean-up
 - 03-nov-2022: Added AI Thinker Audio kit V2.1 suport.
@@ -17,4 +19,3 @@ Updates:
 - 15-apr-2022: Redesigned station selection.
 - 25-apr-2022: Add support for WT32-ETH0 (wired Ethernet).
 - 04-may-2022: OLED with Wire library, should work with Heltec-WIfi board.
-- 16-may-2023: Added sleep command.
