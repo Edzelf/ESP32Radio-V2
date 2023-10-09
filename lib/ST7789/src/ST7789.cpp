@@ -6,7 +6,9 @@
 //**************************************************************************************************
 #include "ST7789.h"
 
-Adafruit_ST7789*     ST7789_tft ;                          // For instance of display driver
+extern bool  pin_exists ( uint8_t pin ) ;                  // Check GPIO pin number
+
+Adafruit_ST7789*     ST7789_tft = NULL ;                   // For instance of display driver
 scrseg_struct        ST7789_tftdata[TFTSECS] =             // Screen divided in 3 segments + 1 overlay
                       {                                    // One text line is 8 pixels
                         { false, GREY,    0,  16,  "" },   // 1 top line
@@ -18,9 +20,12 @@ scrseg_struct        ST7789_tftdata[TFTSECS] =             // Screen divided in 
 
 bool ST7789_dsp_begin ( int8_t cs, int8_t dc )
 {
-  if ( ( ST7789_tft = new Adafruit_ST7789 ( cs, dc , -1 ) ) )      // Create an instant for TFT
+  if ( pin_exists ( cs ) && pin_exists ( dc ) )
   {
-    dsp_init() ;
+    if ( ( ST7789_tft = new Adafruit_ST7789 ( cs, dc , -1 ) ) )      // Create an instant for TFT
+    {
+      dsp_init() ;
+    }
   }
   return ( ST7789_tft != NULL ) ;
 }
