@@ -100,10 +100,11 @@
 // 19-05-2023, ES: Mute and unmute with 2 buttons or commands.
 // 22-05-2023, ES: Use internal mutex for SPI bus.
 // 16-06-2023, ES: Add sleep commmeand.
+// 09-10-2023, ES: Reduce GPIO errors by checking GPIO pins.
 
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Fri, 16 Jun 2023 07:30:00 GMT"
+#define VERSION     "Mon, 09 Oct 2023 09:30:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 //#include <esp_log.h>
@@ -1607,8 +1608,11 @@ bool connectwifi()
                NAME, NAME ) ;
     WiFi.disconnect ( true ) ;                          // After restart the router could
     WiFi.softAPdisconnect ( true ) ;                    // still keep the old connection
-    IPAddress IP = WiFi.softAP ( NAME, NAME ) ;         // This ESP will be an AP
-    ipaddress = IP.toString() ;
+    if ( ! WiFi.softAP ( NAME, NAME ) )                 // This ESP will be an AP
+    {
+      ESP_LOGE ( TAG, "AP failed" ) ;                   // Setup of AP failed
+    }
+    ipaddress = String ( "192.168.4.1" ) ;              // Fixed IP address
   }
   else
   {
@@ -2660,6 +2664,10 @@ void setup()
     dsp_println ( tmpstr ) ;
     dsp_println ( "By Ed Smallenburg" ) ;
     dsp_update ( enc_menu_mode == VOLUME ) ;             // Show on physical screen if needed
+  }
+  else
+  {
+    ESP_LOGE ( TAG, "Display not activated" ) ;          // Display init error
   }
   if ( ini_block.tft_bl_pin >= 0 )                       // Backlight for TFT control?
   {
