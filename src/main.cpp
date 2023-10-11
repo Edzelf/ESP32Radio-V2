@@ -44,7 +44,7 @@
 // ESP32dev Signal  Wired to LCD        Wired to VS1053      AI Audio board    Wired to the rest
 // -------- ------  --------------      -------------------  ---------------   ------------------------
 // GPIO32           -                   pin 1 XDCS           I2C Clock
-// GPIO33           -                   pin 1 XDCS           I2C Data
+// GPIO33           -                   -                    I2C Data
 // GPIO5            -                   pin 2 XCS            KEY 6             -
 // GPIO4            -                   pin 4 DREQ           AMPLIFIER_ENABLE  -
 // GPIO2            pin 3 D/C or A0     -                    SPI_MISO          -
@@ -104,7 +104,7 @@
 
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Mon, 09 Oct 2023 09:30:00 GMT"
+#define VERSION     "Wed, 11 Oct 2023 11:30:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 //#include <esp_log.h>
@@ -848,7 +848,6 @@ void listNetworks()
   ESP_LOGI ( TAG, "Scan Networks" ) ;                    // Scan for nearby networks
   numSsid = WiFi.scanNetworks() ;
   ESP_LOGI ( TAG, "Scan completed" ) ;
-  networks = String ( "" ) ;
   if ( numSsid <= 0 )
   {
     ESP_LOGI ( TAG, "Couldn't get a wifi connection" ) ;
@@ -860,7 +859,7 @@ void listNetworks()
   // Print the network number and name for each network found and
   for ( i = 0 ; i < numSsid ; i++ )
   {
-    acceptable = "" ;                                    // Assume not acceptable
+    acceptable = "Not accepttable" ;                     // Assume not acceptable
     for ( j = 0 ; j < wifilist.size() ; j++ )            // Search in wifilist
     {
       winfo = wifilist[j] ;                              // Get one entry
@@ -2061,7 +2060,7 @@ void scanserial()
       {
         strncpy ( cmd, serialcmd.c_str(), sizeof(cmd) ) ;
         reply = analyzeCmd ( cmd ) ;             // Analyze command and handle it
-        ESP_LOGI ( TAG, "%s", reply ) ;          // Result for debugging
+        log_printf ( "%s", reply ) ;             // Result for debugging
         serialcmd = "" ;                         // Prepare for new command
       }
     }
@@ -2477,16 +2476,19 @@ void fillkeylist()
 //**************************************************************************************************
 // Event callback on received data from MP3/AAC host.                                              *
 // It is assumed that the first data buffer contains the full header.                              *
+// Normally, the data length is 1436 bytes.                                                        *
 //**************************************************************************************************
 void handleData ( void* arg, AsyncClient* client, void *data, size_t len )
 {
   uint8_t* p = (uint8_t*)data ;                         // Treat as an array of bytes
 
+  // ESP_LOGI ( TAG, "Data received, %d bytes", len ) ;
   while ( len-- )
   {
     handlebyte_ch ( *p++ ) ;                            // Handle next byte
   }
 }
+
 
 //**************************************************************************************************
 //                                  O N T I M E O U T                                              *
@@ -2694,13 +2696,6 @@ void setup()
                              sizeof ( qdata_type ) ) ;
   dataqueue = xQueueCreate  ( QSIZ,                      // Create queue for data communication
                              sizeof ( qdata_struct ) ) ;
-  #if defined(DEC_VS1053) || defined(DEC_VS1003)
-    VS1053_begin ( ini_block.vs_cs_pin,                  // Make instance of player and initialize
-                   ini_block.vs_dcs_pin,
-                   ini_block.vs_dreq_pin,
-                   ini_block.shutdown_pin,
-                   ini_block.shutdownx_pin ) ;
-  #endif
   p = "Connect to network" ;                             // Show progress
   ESP_LOGI ( TAG, "%s", p ) ;
   tftlog ( p, true ) ;                                   // On TFT too
@@ -2804,12 +2799,21 @@ void setup()
                 ini_block.enc_sw_pin ) ;
     }
   #endif
-if ( NetworkFound )
+  if ( NetworkFound )
   {
     gettime() ;                                           // Sync time
   }
   adc1_config_width ( ADC_WIDTH_12Bit ) ;
   adc1_config_channel_atten ( ADC1_CHANNEL_0, ADC_ATTEN_0db ) ;
+  xTaskCreatePinnedToCore (
+    playtask,                                             // Task to play data in dataqueue.
+    "Playtask",                                           // Name of task.
+    2100,                                                 // Stack size of task
+    NULL,                                                 // parameter of the task
+    2,                                                    // priority of the task
+    &xplaytask,                                           // Task handle to keep track of created task
+    0 ) ;                                                 // Run on CPU 0
+  vTaskDelay ( 100 / portTICK_PERIOD_MS ) ;               // Allow playtask to start
 #ifdef SDCARD
   sdqueue = xQueueCreate ( 10,                            // Create small queue for communication to sdfuncs
                            sizeof ( qdata_type ) ) ;
@@ -2831,15 +2835,6 @@ if ( NetworkFound )
   tftset ( 0, NAME ) ;                                    // Set screen segment text top line
   presetinfo.station_state = ST_PRESET ;                  // Start in preset mode
   nextPreset ( nvsgetstr ( "preset" ).toInt(), false  ) ; // Restore last preset
-  xTaskCreatePinnedToCore (
-    playtask,                                             // Task to play data in dataqueue.
-    "Playtask",                                           // Name of task.
-    2100,                                                 // Stack size of task
-    NULL,                                                 // parameter of the task
-    2,                                                    // priority of the task
-    &xplaytask,                                           // Task handle to keep track of created task
-    0 ) ;                                                 // Run on CPU 0
-  vTaskDelay ( 100 / portTICK_PERIOD_MS ) ;               // Allow playtask to start
   if ( NetworkFound )                                     // Start with preset if network available
   {
     myQueueSend ( radioqueue, &startcmd ) ;               // Start player in radio mode
@@ -3429,7 +3424,7 @@ void loop()
   }
   if ( sleepreq )                                   // Request for deep sleep?
   {
-  if ( dsp_ok )                                     // TFT configured?
+    if ( dsp_ok )                                   // TFT configured?
     {
       dsp_erase() ;                                 // Yes, clear screen
       dsp_update ( true ) ;                         // To physical screen
@@ -3466,11 +3461,11 @@ void loop()
                  uxTaskGetStackHighWaterMark ( xplaytask ) ) ;
     #ifdef SDCARD
       log_printf ( sformat, pcTaskGetTaskName ( xsdtask ),
-                   uxTaskGetStackHighWaterMark ( xsdtask ) ) ;
+                 uxTaskGetStackHighWaterMark ( xsdtask ) ) ;
     #endif
     log_printf ( "ADC reading is %d, filtered %d\n", adcvalraw, adcval ) ;
     log_printf ( "%d IR interrupts seen\n", ir_intcount ) ;
-    if ( ini_block.sd_detect_pin >= 0 )
+    if ( pin_exists ( ini_block.sd_detect_pin ) )
     {
       if ( digitalRead ( ini_block.sd_detect_pin ) == LOW )
       {
@@ -4384,52 +4379,62 @@ void gettime()
 //**************************************************************************************************
 void playtask ( void * parameter )
 {
-  // static bool once = true ;                                      // Show chunk once
+  // static bool once = true ;                                      // Show chunk once  #if defined(DEC_VS1053) || defined(DEC_VS1003)
+  bool VS_okay ;                                                    // VS isw okay or not
 
+  VS_okay = VS1053_begin ( ini_block.vs_cs_pin,                     // Make instance of player and initialize
+                           ini_block.vs_dcs_pin,
+                           ini_block.vs_dreq_pin,
+                           ini_block.shutdown_pin,
+                           ini_block.shutdownx_pin ) ;
   while ( true )
   {
     if ( xQueueReceive ( dataqueue, &inchunk, 5 ) == pdTRUE )       // Command/data from queue?
     {
-     switch ( inchunk.datatyp )                                     // What kind of command?
+      if ( VS_okay )
       {
-        case QDATA:
-          while ( !vs1053player->data_request() )                   // If hardware FIFO is full..
-          {
-            vTaskDelay ( 1 ) ;                                      // Yes, take a break
-          }
-          // if ( once )                                            // Show this chunk?
-          // {
-          //   Serial.printf ( "First chunk to play (HEX):" ) ;     // Yes, show for testing purpose
-          //   for ( int i = 0 ; i < 32 ; i++ )
-          //   {
-          //     Serial.printf ( " %02X", inchunk.buf[i] ) ; 
-          //   }
-          //   Serial.printf ( "\n" ) ;
-          //   once = false ;                                       // Just show once
-          // }
-          vs1053player->playChunk ( inchunk.buf,                    // DATA, send to player
-                                    sizeof(inchunk.buf) ) ;
-          totalcount += sizeof(inchunk.buf) ;                       // Count the bytes
-          break ;
-        case QSTARTSONG:
-          ESP_LOGI ( TAG, "QSTARTSONG" ) ;
-          playingstat = 1 ;                                         // Status for MQTT
-          mqttpub.trigger ( MQTT_PLAYING ) ;                        // Request publishing to MQTT
-          vs1053player->startSong() ;                               // START, start player
-          // once = true ;
-          break ;
-        case QSTOPSONG:
-          ESP_LOGI ( TAG, "QSTOPSONG" ) ;
-          playingstat = 0 ;                                         // Status for MQTT
-          mqttpub.trigger ( MQTT_PLAYING ) ;                        // Request publishing to MQTT
-          vs1053player->setVolume ( 0 ) ;                           // Mute
-          vs1053player->stopSong() ;                                // STOP, stop player
-          break ;
-        case QSTOPTASK:
-          vTaskDelete ( NULL ) ;                                    // Stop task
-          break ;
-        default:
-          break ;
+        switch ( inchunk.datatyp )                                    // What kind of command?
+        {
+          case QDATA:
+            while ( !vs1053player->data_request() )                   // If hardware FIFO is full..
+            {
+              vTaskDelay ( 1 ) ;                                      // Yes, take a break
+            }
+            // if ( once )                                            // Show this chunk?
+            // {
+            //   Serial.printf ( "First chunk to play (HEX):" ) ;     // Yes, show for testing purpose
+            //   for ( int i = 0 ; i < 32 ; i++ )
+            //   {
+            //     Serial.printf ( " %02X", inchunk.buf[i] ) ; 
+            //   }
+            //   Serial.printf ( "\n" ) ;
+            //   once = false ;                                       // Just show once
+            // }
+            vs1053player->playChunk ( inchunk.buf,                    // DATA, send to player
+                                      sizeof(inchunk.buf) ) ;
+            totalcount += sizeof(inchunk.buf) ;                       // Count the bytes
+            break ;
+          case QSTARTSONG:
+            ESP_LOGI ( TAG, "QSTARTSONG" ) ;
+            playingstat = 1 ;                                         // Status for MQTT
+            mqttpub.trigger ( MQTT_PLAYING ) ;                        // Request publishing to MQTT
+            vs1053player->setVolume ( ini_block.reqvol ) ;            // Unmute
+            vs1053player->startSong() ;                               // START, start player
+            // once = true ;
+            break ;
+          case QSTOPSONG:
+            ESP_LOGI ( TAG, "QSTOPSONG" ) ;
+            playingstat = 0 ;                                         // Status for MQTT
+            mqttpub.trigger ( MQTT_PLAYING ) ;                        // Request publishing to MQTT
+            vs1053player->setVolume ( 0 ) ;                           // Mute
+            vs1053player->stopSong() ;                                // STOP, stop player
+            break ;
+          case QSTOPTASK:
+            vTaskDelete ( NULL ) ;                                    // Stop task
+            break ;
+          default:
+            break ;
+        }
       }
     }
   }
