@@ -5,6 +5,8 @@
 
 VS1053*     vs1053player ;                          // The object for the MP3 player
 
+extern bool  pin_exists ( uint8_t pin ) ;           // Check GPIO pin number
+
 //**************************************************************************************************
 // VS1053 constructor.                                                                             *
 //**************************************************************************************************
@@ -128,8 +130,6 @@ bool VS1053::testComm ( const char *header )
   if ( !digitalRead ( dreq_pin ) )
   {
     ESP_LOGE ( VTAG, "VS1053 not properly installed!" ) ;
-    // Allow testing without the VS1053 module
-    pinMode ( dreq_pin,  INPUT_PULLUP ) ;               // DREQ is now input with pull-up
     return false ;                                      // Return bad result
   }
   // Further TESTING.  Check if SCI bus can write and read without errors.
@@ -167,20 +167,20 @@ bool VS1053::testComm ( const char *header )
 
 void VS1053::begin()
 {
-  pinMode      ( dreq_pin,  INPUT ) ;                   // DREQ is an input
+  pinMode      ( dreq_pin,  INPUT_PULLUP ) ;            // DREQ is an input
   pinMode      ( cs_pin,    OUTPUT ) ;                  // The SCI and SDI signals
   pinMode      ( dcs_pin,   OUTPUT ) ;
   digitalWrite ( dcs_pin,   HIGH ) ;                    // Start HIGH for SCI en SDI
   digitalWrite ( cs_pin,    HIGH ) ;
-  if ( shutdown_pin >= 0 )                              // Shutdown in use?
+  if ( pin_exists ( shutdown_pin ) )                    // Shutdown in use?
   {
     pinMode ( shutdown_pin,   OUTPUT ) ;
   }
-  if ( shutdownx_pin >= 0 )                            // Shutdown (inversed logic) in use?
+  if ( pin_exists ( shutdownx_pin ) )                   // Shutdown (inversed logic) in use?
   {
     pinMode ( shutdownx_pin,   OUTPUT ) ;
   }
-  output_enable ( false ) ;                            // Disable amplifier through shutdown pin(s)
+  output_enable ( false ) ;                             // Disable amplifier through shutdown pin(s)
   delay ( 100 ) ;
   // Init SPI in slow mode ( 0.2 MHz )
   VS1053_SPI._clock = 200000  ;
@@ -356,10 +356,19 @@ void VS1053::streamMode ( bool onoff )                // Set stream mode on/off
   await_data_request() ;
 }
 
-void VS1053_begin ( int8_t cs, int8_t dcs, int8_t dreq, int8_t shutdown, int8_t shutdownx )
+bool VS1053_begin ( int8_t cs, int8_t dcs, int8_t dreq, int8_t shutdown, int8_t shutdownx )
 {
-  vs1053player = new VS1053 ( cs, dcs, dreq,             // Create object
+  if ( ! pin_exists ( dreq ) )                        // Check DREC pin
+  {
+    return false ;
+  }
+  vs1053player = new VS1053 ( cs, dcs, dreq,          // Create object
                               shutdown, shutdownx ) ;
-  vs1053player->streamMode ( true ) ;                    // Set streammode (experimental)
-  vs1053player->begin() ;                                // Initialize VS1053 player
+  if ( ! vs1053player->data_request() )               // DREC should be high
+  {
+    return false ;
+  }
+  vs1053player->streamMode ( true ) ;                 // Set streammode (experimental)
+  vs1053player->begin() ;                             // Initialize VS1053 player
+  return true ;
 }

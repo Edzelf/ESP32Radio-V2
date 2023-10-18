@@ -13,7 +13,7 @@
 #define player_setVolume      vs1053player->setVolume
 #define player_setTone        vs1053player->setTone
 
-void VS1053_begin ( int8_t cs, int8_t dcs, int8_t dreq, int8_t shutdown, int8_t shutdownx ) ;
+bool VS1053_begin ( int8_t cs, int8_t dcs, int8_t dreq, int8_t shutdown, int8_t shutdownx ) ;
 
 
 class VS1053
@@ -53,8 +53,7 @@ class VS1053
   protected:
     inline void await_data_request() const
     {
-      while ( ( dreq_pin >= 0 ) &&
-              ( !digitalRead ( dreq_pin ) ) )
+      while ( !digitalRead ( dreq_pin ) )
       {
         NOP() ;                                   // Very short delay
       }
