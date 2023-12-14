@@ -101,10 +101,11 @@
 // 22-05-2023, ES: Use internal mutex for SPI bus.
 // 16-06-2023, ES: Add sleep commmeand.
 // 09-10-2023, ES: Reduce GPIO errors by checking GPIO pins.
+// 14-12-2023, ES: Add mqtt trigger to refresh all items.
 
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Wed, 11 Oct 2023 11:30:00 GMT"
+#define VERSION     "Thu, 14 Dec 2023 09:00:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 //#include <esp_log.h>
@@ -537,7 +538,8 @@ class mqttpubc                                           // For MQTT publishing
       { NULL,              0,        NULL,                   false }  // End of definitions
     } ;
   public:
-    void          trigger ( uint8_t item ) ;                      // Trigger publishig for one item
+    void          trigger ( uint8_t item ) ;                      // Trigger publishing for one item
+    void          triggerall () ;                                 // Trigger all items
     void          publishtopic() ;                                // Publish triggerer items
 } ;
 
@@ -554,6 +556,21 @@ class mqttpubc                                           // For MQTT publishing
 void mqttpubc::trigger ( uint8_t item )                    // Trigger publishig for one item
 {
   amqttpub[item].topictrigger = true ;                     // Request re-publish for an item
+}
+
+//**************************************************************************************************
+//                                       T R I G G E R A L L                                       *
+//**************************************************************************************************
+// Set request for all items to publish to MQTT.                                                   *
+//**************************************************************************************************
+void mqttpubc::triggerall()                                // Trigger publishig for one item
+{
+  int item = 0 ;                                           // Item to refresh
+
+  while ( amqttpub[item].topic )                           // Cycle through the list of items
+  {
+    trigger ( item++ ) ;                                   // Trigger this item and select next
+  }
 }
 
 //**************************************************************************************************
@@ -4044,6 +4061,7 @@ const char* analyzeCmd ( const char* str )
 //   mqttport   = 1883                      // Set MQTT port to use, default 1883 *)               *
 //   mqttuser   = myuser                    // Set MQTT user for authentication *)                 *
 //   mqttpasswd = mypassword                // Set MQTT password for authentication *)             *
+//   mqttrefresh                            // Refresh all MQTT items
 //   clk_server = pool.ntp.org              // Time server to be used *)                           *
 //   clk_offset = <-11..+14>                // Offset with respect to UTC in hours *)              *
 //   clk_dst    = <1..2>                    // Offset during daylight saving time in hours *)      *
@@ -4246,6 +4264,10 @@ const char* analyzeCmd ( const char* par, const char* val )
     else if ( argument.indexOf ( "passwd" ) > 0 )     // Password specified?
     {
       ini_block.mqttpasswd = value.c_str() ;          // Yes, set broker password accordingly
+    }
+    else if ( argument.indexOf ( "refresh" ) > 0 )    // Refresh all items?
+    {
+      mqttpub.triggerall() ;                          // Yes, request to republish all items
     }
   }
   else if ( argument == "getnetworks" )               // List all WiFi networks?
