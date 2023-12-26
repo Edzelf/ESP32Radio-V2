@@ -358,10 +358,10 @@ void VS1053::streamMode ( bool onoff )                // Set stream mode on/off
 
 bool VS1053_begin ( int8_t cs, int8_t dcs, int8_t dreq, int8_t shutdown, int8_t shutdownx )
 {
-  if ( ! pin_exists ( dreq ) )                        // Check DREC pin
-  {
-    return false ;
-  }
+  //if ( ! pin_exists ( dreq ) )                      // Check DREC pin
+  //{
+  //  return false ;
+  //}
   vs1053player = new VS1053 ( cs, dcs, dreq,          // Create object
                               shutdown, shutdownx ) ;
   if ( ! vs1053player->data_request() )               // DREC should be high
