@@ -5,6 +5,7 @@ New version of the well known ESP32 Radio.  Now optional I2S output!
 - SD cards supported, but still experimental.
 
 Updates:
+- 26-dec-2023: Correct crash with VS1053 and empty preferences.
 - 14-dec-2023: Add "mqttrefresh" command to refresh all mqtt items.
 - 09-oct-2023: Reduced error messages caused by uninitialized GPIO numbers.
 - 16-may-2023: Added sleep command.
