@@ -102,10 +102,10 @@
 // 16-06-2023, ES: Add sleep commmeand.
 // 09-10-2023, ES: Reduce GPIO errors by checking GPIO pins.
 // 14-12-2023, ES: Add mqtt trigger to refresh all items.
-
+// 26-12-2023, ES: Do not start if no preferences found.
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Thu, 14 Dec 2023 09:00:00 GMT"
+#define VERSION     "Thu, 26 Dec 2023 14:30:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 //#include <esp_log.h>
@@ -333,6 +333,7 @@ enum datamode_t { INIT = 0x1, HEADER = 0x2, DATA = 0x4,      // State for datast
 
 // Global variables
 int                  numSsid ;                           // Number of available WiFi networks
+int                  numprefs ;                          // Number of preferences found
 preset_info_t        presetinfo ;                        // Info about the current or new station
 ini_struct           ini_block ;                         // Holds configurable data
 AsyncWebServer       cmdserver ( 80 ) ;                  // Instance of embedded webserver, port 80
@@ -1965,6 +1966,7 @@ String readprefs ( bool output )
       analyzeCmd ( cmd.c_str() ) ;                          // Analyze it
     }
   }
+  numprefs = i ;                                            // sAVE THE NUMBER OF PRERERENCES FOUND
   if ( i == 0 )                                             // Any key seen?
   {
     outstr = String ( "No preferences found.\n"
@@ -2830,7 +2832,8 @@ void setup()
     2,                                                    // priority of the task
     &xplaytask,                                           // Task handle to keep track of created task
     0 ) ;                                                 // Run on CPU 0
-  vTaskDelay ( 100 / portTICK_PERIOD_MS ) ;               // Allow playtask to start
+  vTaskDelay ( 2000 / portTICK_PERIOD_MS ) ;              // Allow playtask to start
+  ESP_LOGI ( TAG, "Playtask started" ) ;
 #ifdef SDCARD
   sdqueue = xQueueCreate ( 10,                            // Create small queue for communication to sdfuncs
                            sizeof ( qdata_type ) ) ;
@@ -2844,15 +2847,15 @@ void setup()
     0 ) ;                                                 // Run on CPU 0
 #endif
   singleclick = false ;                                   // Might be fantom click
+  vTaskDelay ( 200 / portTICK_PERIOD_MS ) ;               // Allow playtask to start
   if ( dsp_ok )                                           // Is display okay?
   {
-    vTaskDelay ( 2000 / portTICK_PERIOD_MS ) ;            // Yes, allow user to read display text
     dsp_erase() ;                                         // Clear screen
   }
   tftset ( 0, NAME ) ;                                    // Set screen segment text top line
   presetinfo.station_state = ST_PRESET ;                  // Start in preset mode
   nextPreset ( nvsgetstr ( "preset" ).toInt(), false  ) ; // Restore last preset
-  if ( NetworkFound )                                     // Start with preset if network available
+  if ( NetworkFound && ( numprefs > 0 ) )                 // Start if network and preferences available
   {
     myQueueSend ( radioqueue, &startcmd ) ;               // Start player in radio mode
   }
