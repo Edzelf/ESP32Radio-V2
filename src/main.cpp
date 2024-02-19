@@ -104,11 +104,11 @@
 // 14-12-2023, ES: Add mqtt trigger to refresh all items.
 // 16-01-2024, ES: Disable brownout.
 // 16-02-2024, ES: SPDIFF output (experimental).
-// 19-02-2024, ES: Fixed mono stream.
+// 19-02-2024, ES: Fixed mono stream, correct handling of reset command.
 
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Mon, 19 Feb 2024 13:30:00 GMT"
+#define VERSION     "Mon, 19 Feb 2024 16:30:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "soc/soc.h"                                      // For brown-out detector setting
@@ -208,6 +208,7 @@ void        handle_saveprefs ( AsyncWebServerRequest *request ) ;
 void        handle_getdefs   ( AsyncWebServerRequest *request ) ;
 void        handle_settings  ( AsyncWebServerRequest *request ) ;
 void        handle_mp3list   ( AsyncWebServerRequest *request ) ;
+void        handle_reset     ( AsyncWebServerRequest *request ) ;
 bool        readhostfrompref ( int16_t preset, String* host, String* hsym = NULL ) ;
 
 
@@ -2592,6 +2593,7 @@ void setup()
   cmdserver.on ( "/getdefs",   handle_getdefs ) ;        // Handle get default config
   cmdserver.on ( "/settings",  handle_settings ) ;       // Handle strings like presets/volume,...
   cmdserver.on ( "/mp3list",   handle_mp3list ) ;        // Handle request for list of tracks
+  cmdserver.on ( "/reset",     handle_reset ) ;          // Handle reset command
   cmdserver.onNotFound ( handle_notfound ) ;             // For handling a simple page/file and parameters
   cmdserver.begin() ;                                    // Start http server
   if ( NetworkFound )                                    // OTA and MQTT only if Wifi network found
@@ -2842,6 +2844,7 @@ void handle_mp3list ( AsyncWebServerRequest *request )
 }
 #endif
 
+
 //**************************************************************************************************
 //                                    H A N D L E _ G E T P R E F S                                *
 //**************************************************************************************************
@@ -2960,6 +2963,18 @@ void handleSaveReq()
   nvssetstr ( "tonehf", String ( ini_block.rtone[1] ) ) ; // Save current tonehf
   nvssetstr ( "tonela", String ( ini_block.rtone[2] ) ) ; // Save current tonela
   nvssetstr ( "tonelf", String ( ini_block.rtone[3] ) ) ; // Save current tonelf
+}
+
+
+//**************************************************************************************************
+//                                    H A N D L E _ R E S E T                                      *
+//**************************************************************************************************
+// Called from config page to reset the radio.                                                     *
+//**************************************************************************************************
+void handle_reset ( AsyncWebServerRequest *request )
+{
+  request->send ( 200, "text/plain", "Command accepted"  ) ;         // Send the reply
+  resetreq = true ;                                                  // Set the reset request
 }
 
 
@@ -3817,7 +3832,7 @@ void handle_notfound ( AsyncWebServerRequest *request )
       continue ;
     }
     cmd = key + String ( "=" ) + contents ;           // Format command to analyze
-    //ESP_LOGI ( TAG, "Http command is %s", cmd.c_str() ) ;
+    ESP_LOGI ( TAG, "Http command is %s", cmd.c_str() ) ;
     p = analyzeCmd ( cmd.c_str() ) ;                  // Analyze command
     sndstr += String ( p ) ;                          // Content of HTTP response follows the header
   }
