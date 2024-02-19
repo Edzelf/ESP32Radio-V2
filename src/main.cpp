@@ -102,12 +102,17 @@
 // 16-06-2023, ES: Add sleep commmeand.
 // 09-10-2023, ES: Reduce GPIO errors by checking GPIO pins.
 // 14-12-2023, ES: Add mqtt trigger to refresh all items.
-// 26-12-2023, ES: Do not start if no preferences found.
+// 16-01-2024, ES: Disable brownout.
+// 16-02-2024, ES: SPDIFF output (experimental).
+// 19-02-2024, ES: Fixed mono stream.
+
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Thu, 26 Dec 2023 14:30:00 GMT"
+#define VERSION     "Mon, 19 Feb 2024 13:30:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
+#include "soc/soc.h"                                      // For brown-out detector setting
+#include "soc/rtc_cntl_reg.h"                             // For brown-out detector settingtest
 //#include <esp_log.h>
 #include <WiFi.h>
 #include "config.h"                                       // Specify display type, decoder type
@@ -137,15 +142,15 @@
 #include <base64.h>                                       // For Basic authentication
 #include <SPIFFS.h>                                       // Filesystem
 #include "utils.h"                                        // Some handy utilities
-#if defined(DEC_HELIX_INT) || defined(DEC_HELIX_AI)       // Software decoder using internal DAC?
-  #define DEC_HELIX                                       // Yes, make sure to include software decoders
-  #ifdef DEC_HELIX_AI                                     // AI Audio kit board?
-   #include <AC101.h>
-   #define GPIO_PA_EN 21                                  // GPIO for enabling amplifier
-   AC101 dac ;                                            // AC101 controls
-  #endif
+#if defined(DEC_HELIX_SPDIF) || defined(DEC_HELIX_INT) || defined(DEC_HELIX_AI)
+  #define DEC_HELIX
 #endif
-#ifdef DEC_HELIX                                          // Software decoder?
+#if defined(DEC_HELIX_AI)                                 // AI Audio kit board?
+  #include <AC101.h>
+  #define GPIO_PA_EN 21                                   // GPIO for enabling amplifier
+  AC101 dac ;                                             // AC101 controls
+#endif
+#if defined(DEC_HELIX)
   #include <driver/i2s.h>                                 // Driver for I2S output
   #include "mp3_decoder.h"                                // Yes, include libhelix_HMP3DECODER
   #include "aac_decoder.h"                                // and libhelix_HAACDECODER
@@ -153,6 +158,7 @@
 #else
   #include "VS1053.h"                                     // Driver for VS1053
 #endif
+#define MAXKEYS           200                             // Max. number of NVS keys in table
 #define FSIF              true                            // Format SPIFFS if not existing
 #define QSIZ              400                             // Number of entries in the MP3 stream queue
 #define NVSBUFSIZE        150                             // Max size of a string in NVS
@@ -165,7 +171,6 @@
 #define MAXPRESETS        200                             // Max number of presets in preferences
 #define MAXMQTTCONNECTS   5                               // Maximum number of MQTT reconnects before give-up
 #define METASIZ           1024                            // Size of metaline buffer
-#define MAXKEYS           200                             // Max. number of NVS keys in table
 #define BL_TIME           45                              // Time-out [sec] for blanking TFT display (BL pin)
 //
 // Subscription topics for MQTT.  The topic will be pefixed by "PREFIX/", where PREFIX is replaced
@@ -203,7 +208,7 @@ void        handle_saveprefs ( AsyncWebServerRequest *request ) ;
 void        handle_getdefs   ( AsyncWebServerRequest *request ) ;
 void        handle_settings  ( AsyncWebServerRequest *request ) ;
 void        handle_mp3list   ( AsyncWebServerRequest *request ) ;
-void        readhostfrompref ( int16_t preset, String* host, String* hsym = NULL ) ;
+bool        readhostfrompref ( int16_t preset, String* host, String* hsym = NULL ) ;
 
 
 
@@ -259,6 +264,7 @@ struct ini_struct
   int8_t         i2s_bck_pin ;                        // GPIO Pin number for I2S "BCK"
   int8_t         i2s_lck_pin ;                        // GPIO Pin number for I2S "L(R)CK"
   int8_t         i2s_din_pin ;                        // GPIO Pin number for I2S "DIN"
+  int8_t         i2s_spdif_pin ;                      // GPIO Pin number for SPDIF output
   int8_t         eth_mdc_pin ;                        // GPIO Pin number for Ethernet controller MDC
   int8_t         eth_mdio_pin ;                       // GPIO Pin number for Ethernet controller MDIO
   int8_t         eth_power_pin ;                      // GPIO Pin number for Ethernet controller POWER
@@ -270,32 +276,6 @@ struct WifiInfo_t                                     // For list with WiFi info
 {
   char * ssid ;                                       // SSID for an entry
   char * passphrase ;                                 // Passphrase for an entry
-} ;
-
-struct nvs_entry
-{
-  uint8_t  Ns ;                                       // Namespace ID
-  uint8_t  Type ;                                     // Type of value
-  uint8_t  Span ;                                     // Number of entries used for this item
-  uint8_t  Rvs ;                                      // Reserved, should be 0xFF
-  uint32_t CRC ;                                      // CRC
-  char     Key[16] ;                                  // Key in Asciitest
-  uint64_t Data ;                                     // Data in entry
-} ;
-
-struct nvs_page                                       // For nvs entries
-{ // 1 page is 4096 bytes
-  uint32_t  State ;
-  uint32_t  Seqnr ;
-  uint32_t  Unused[5] ;
-  uint32_t  CRC ;
-  uint8_t   Bitmap[32] ;
-  nvs_entry Entry[126] ;
-} ;
-
-struct keyname_t                                      // For keys in NVS
-{
-  char      Key[16] ;                                 // Max length is 15 plus delimeter
 } ;
 
 // Preset info
@@ -332,8 +312,6 @@ enum datamode_t { INIT = 0x1, HEADER = 0x2, DATA = 0x4,      // State for datast
                 } ;
 
 // Global variables
-int                  numSsid ;                           // Number of available WiFi networks
-int                  numprefs ;                          // Number of preferences found
 preset_info_t        presetinfo ;                        // Info about the current or new station
 ini_struct           ini_block ;                         // Holds configurable data
 AsyncWebServer       cmdserver ( 80 ) ;                  // Instance of embedded webserver, port 80
@@ -376,7 +354,6 @@ bool                 sleepreq = false ;                  // Request for deep sle
 bool                 eth_connected = false ;             // Ethernet connected or not
 bool                 NetworkFound = false ;              // True if WiFi network connected
 bool                 mqtt_on = false ;                   // MQTT in use
-String               networks = "None|" ;                // Found networks in the surrounding
 uint16_t             mqttcount = 0 ;                     // Counter MAXMQTTCONNECTS
 int8_t               playingstat = 0 ;                   // 1 if radio is playing (for MQTT)
 int16_t              playlist_num = 0 ;                  // Nonzero for selection from playlist
@@ -398,13 +375,10 @@ const char*          fixedwifi = "" ;                    // Used for FIXEDWIFI o
 std::vector<WifiInfo_t> wifilist ;                       // List with wifi_xx info
 
 // nvs stuff
-nvs_page                nvsbuf ;                         // Space for 1 page of NVS info
-const esp_partition_t*  nvs ;                            // Pointer to partition struct
-esp_err_t               nvserr ;                         // Error code from nvs functions
-uint32_t                nvshandle = 0 ;                  // Handle for nvs access
-uint8_t                 namespace_ID ;                   // Namespace ID found
-RTC_NOINIT_ATTR char    nvskeys[MAXKEYS][16] ;           // Space for NVS keys
-std::vector<keyname_t>  keynames ;                       // Keynames in NVS
+const esp_partition_t*  nvs ;                                     // Pointer to partition struct
+esp_err_t               nvserr ;                                  // Error code from nvs functions
+uint32_t                nvshandle = 0 ;                           // Handle for nvs access
+RTC_NOINIT_ATTR char    nvskeys[MAXKEYS][NVS_KEY_NAME_MAX_SIZE] ; // Space for NVS keys
 
 // Rotary encoder stuff
 #define sv DRAM_ATTR static volatile
@@ -848,58 +822,6 @@ void tftset ( uint16_t inx, String& str )
 }
 
 
-#ifndef ETHERNET
-//**************************************************************************************************
-//                                        L I S T N E T W O R K S                                  *
-//**************************************************************************************************
-// List the available networks.                                                                    *
-// Acceptable networks are those who have an entry in the preferences.                             *
-// SSIDs of available networks will be saved for use in webinterface.                              *
-//**************************************************************************************************
-void listNetworks()
-{
-  WifiInfo_t       winfo ;            // Entry from wifilist
-  wifi_auth_mode_t encryption ;       // TKIP(WPA), WEP, etc.
-  const char*      acceptable ;       // Netwerk is acceptable for connection
-  int              i, j ;             // Loop control
-
-  ESP_LOGI ( TAG, "Scan Networks" ) ;                    // Scan for nearby networks
-  numSsid = WiFi.scanNetworks() ;
-  ESP_LOGI ( TAG, "Scan completed" ) ;
-  if ( numSsid <= 0 )
-  {
-    ESP_LOGI ( TAG, "Couldn't get a wifi connection" ) ;
-    return ;
-  }
-  // print the list of networks seen:
-  ESP_LOGI ( TAG, "Number of available networks: %d",
-             numSsid ) ;
-  // Print the network number and name for each network found and
-  for ( i = 0 ; i < numSsid ; i++ )
-  {
-    acceptable = "Not accepttable" ;                     // Assume not acceptable
-    for ( j = 0 ; j < wifilist.size() ; j++ )            // Search in wifilist
-    {
-      winfo = wifilist[j] ;                              // Get one entry
-      if ( WiFi.SSID(i).indexOf ( winfo.ssid ) == 0 )    // Is this SSID acceptable?
-      {
-        acceptable = "Acceptable" ;
-        break ;
-      }
-    }
-    encryption = WiFi.encryptionType ( i ) ;
-    ESP_LOGI ( TAG, "%2d - %-25s Signal: %3d dBm, Encryption %4s, %s",
-               i + 1, WiFi.SSID(i).c_str(), WiFi.RSSI(i),
-               getEncryptionType ( encryption ),
-               acceptable ) ;
-    // Remember this network for later use
-    networks += WiFi.SSID(i) + String ( "|" ) ;
-  }
-  ESP_LOGI ( TAG, "End of list" ) ;
-}
-#endif
-
-
 //**************************************************************************************************
 //                                          U P D A T E N R                                        *
 //**************************************************************************************************
@@ -940,7 +862,7 @@ bool updateNr ( int16_t* pnr, int16_t maxnr, int16_t nr, bool relative )
 //**************************************************************************************************
 // Set the preset for the next station.  May be relative.                                          *
 //**************************************************************************************************
-void nextPreset ( int16_t pnr, bool relative = false )
+bool nextPreset ( int16_t pnr, bool relative = false )
 {
   //ESP_LOGI ( TAG, "nextpreset called with pnr = %d", pnr ) ;
   if ( ( presetinfo.station_state == ST_STATION ) ||           // In station mode?
@@ -962,10 +884,15 @@ void nextPreset ( int16_t pnr, bool relative = false )
     updateNr ( &presetinfo.preset,                             // Select next preset
                presetinfo.highest_preset,
                pnr, relative ) ;
-    readhostfrompref ( presetinfo.preset, &presetinfo.host,    // Set host
-                       &presetinfo.hsym ) ;
+    if ( ! readhostfrompref ( presetinfo.preset,              // Set host
+                              &presetinfo.host,
+                              &presetinfo.hsym ) )
+    {
+      return false ;
+    }
     ESP_LOGI ( TAG, "nextPreset is %d", presetinfo.preset ) ;
   }
+  return true ;
 }
 
 
@@ -1592,6 +1519,7 @@ bool connectwifi()
   const char* pIP ;                                     // Pointer to IP address
   WifiInfo_t  winfo ;                                   // Entry from wifilist
 
+  WiFi.mode ( WIFI_STA ) ;                              // This ESP is a station
   WiFi.disconnect ( true ) ;                            // After restart the router could
   WiFi.softAPdisconnect ( true ) ;                      // still keep the old connection
   vTaskDelay ( 1000 / portTICK_PERIOD_MS ) ;            // Silly things to start connection
@@ -1602,8 +1530,8 @@ bool connectwifi()
     if ( wifilist.size() == 1 )                         // Just one AP defined in preferences?
     {
       winfo = wifilist[0] ;                             // Get this entry
+      ESP_LOGI ( TAG, "Try WiFi \"%s\"", winfo.ssid ) ; // Message to show during WiFi connect
       WiFi.begin ( winfo.ssid, winfo.passphrase ) ;     // Connect to single SSID found in wifi_xx
-      ESP_LOGI ( TAG, "Try WiFi %s", winfo.ssid ) ;     // Message to show during WiFi connect
     }
     else                                                // More AP to try
     {
@@ -1691,7 +1619,7 @@ void otaerror ( ota_error_t error)
 // The host will be returned.                                                                      *
 // We search for "preset_x" or "preset_xx" or "preset_xxx".                                        *
 //**************************************************************************************************
-void readhostfrompref ( int16_t preset, String* host, String* hsym )
+bool readhostfrompref ( int16_t preset, String* host, String* hsym )
 {
   char           tkey[12] ;                            // Key as an array of char
   int            inx ;                                 // Position of comment in preset
@@ -1708,7 +1636,7 @@ void readhostfrompref ( int16_t preset, String* host, String* hsym )
     {
       *host = String ( "" ) ;                          // Not found
       *hsym = *host ;                                  // Symbolic name also unknown
-      return ;
+      return false ;
     }
   }
   // Get the contents
@@ -1724,6 +1652,7 @@ void readhostfrompref ( int16_t preset, String* host, String* hsym )
     }
     chomp ( *hsym ) ;                                  // Remove garbage from description
   }
+  return true ;
 }
 
 
@@ -1841,47 +1770,57 @@ void readIOprefs()
   struct iosetting
   {
     const char* gname ;                                   // Name in preferences
-    int8_t*     gnr ;                                     // GPIO pin number
+    int8_t*     gnr ;                                     // Address of target GPIO pin number
     int8_t      pdefault ;                                // Default pin
   };
   struct iosetting klist[] = {                            // List of I/O related keys
-    { "pin_ir",        &ini_block.ir_pin,           -1 },
-    { "pin_enc_clk",   &ini_block.enc_clk_pin,      -1 }, // Rotary encoder CLK
-    { "pin_enc_dt",    &ini_block.enc_dt_pin,       -1 }, // Rotary encoder DT
-    { "pin_enc_up",    &ini_block.enc_up_pin,       -1 }, // ZIPPY B5 side switch up
-    { "pin_enc_dwn",   &ini_block.enc_dwn_pin,      -1 }, // ZIPPY B5 side switch down
-    { "pin_enc_sw",    &ini_block.enc_sw_pin,       -1 },
-    { "pin_tft_cs",    &ini_block.tft_cs_pin,       -1 }, // Display SPI version
-    { "pin_tft_dc",    &ini_block.tft_dc_pin,       -1 }, // Display SPI version
-    { "pin_tft_scl",   &ini_block.tft_scl_pin,      -1 }, // Display I2C version
-    { "pin_tft_sda",   &ini_block.tft_sda_pin,      -1 }, // Display I2C version
-    { "pin_tft_bl",    &ini_block.tft_bl_pin,       -1 }, // Display backlight
-    { "pin_tft_blx",   &ini_block.tft_blx_pin,      -1 }, // Display backlight (inversed logic)
-    { "pin_nxt_rx",    &ini_block.nxt_rx_pin,       -1 }, // NEXTION input pin
-    { "pin_nxt_tx",    &ini_block.nxt_tx_pin,       -1 }, // NEXTION output pin
-    { "pin_sd_cs",     &ini_block.sd_cs_pin,        -1 }, // SD card select
-    { "pin_sd_detect", &ini_block.sd_detect_pin,    -1 }, // SD card detect
-    { "pin_vs_cs",     &ini_block.vs_cs_pin,        -1 }, // VS1053 pins
-    { "pin_vs_dcs",    &ini_block.vs_dcs_pin,       -1 },
-    { "pin_vs_dreq",   &ini_block.vs_dreq_pin,      -1 },
-    { "pin_shutdown",  &ini_block.shutdown_pin,     -1 }, // Amplifier shut-down pin
-    { "pin_shutdownx", &ini_block.shutdownx_pin,    -1 }, // Amplifier shut-down pin (inversed logic)
-    { "pin_i2s_bck",   &ini_block.i2s_bck_pin,      -1 }, // I2S interface pins
-    { "pin_i2s_lck",   &ini_block.i2s_lck_pin,      -1 },
-    { "pin_i2s_din",   &ini_block.i2s_din_pin,      -1 },
-  #ifdef ETHERNET
-    { "pin_spi_sck",   &ini_block.spi_sck_pin,      -1 },
-    { "pin_spi_miso",  &ini_block.spi_miso_pin,     -1 },
-    { "pin_spi_mosi",  &ini_block.spi_mosi_pin,     -1 },
-    { "pin_eth_mdc",   &ini_block.eth_mdc_pin,      23 },
-    { "pin_eth_mdio",  &ini_block.eth_mdio_pin,     18 },
-    { "pin_eth_power", &ini_block.eth_power_pin,    16 },
-  #else
-    { "pin_spi_sck",   &ini_block.spi_sck_pin,      18 }, // Note: different for AI Audio kit (14)
-    { "pin_spi_miso",  &ini_block.spi_miso_pin,     19 }, // Note: different for AI Audio kit (2)
-    { "pin_spi_mosi",  &ini_block.spi_mosi_pin,     23 }, // Note: different for AI Audio kit (15)
-  #endif
-    { NULL,            NULL,                        0  }  // End of list
+      { "pin_ir",        &ini_block.ir_pin,           -1 },
+      { "pin_enc_clk",   &ini_block.enc_clk_pin,      -1 }, // Rotary encoder CLK
+      { "pin_enc_dt",    &ini_block.enc_dt_pin,       -1 }, // Rotary encoder DT
+      { "pin_enc_up",    &ini_block.enc_up_pin,       -1 }, // ZIPPY B5 side switch up
+      { "pin_enc_dwn",   &ini_block.enc_dwn_pin,      -1 }, // ZIPPY B5 side switch down
+      { "pin_enc_sw",    &ini_block.enc_sw_pin,       -1 },
+      { "pin_tft_cs",    &ini_block.tft_cs_pin,       -1 }, // Display SPI version
+      { "pin_tft_dc",    &ini_block.tft_dc_pin,       -1 }, // Display SPI version
+      { "pin_tft_scl",   &ini_block.tft_scl_pin,      -1 }, // Display I2C version
+      { "pin_tft_sda",   &ini_block.tft_sda_pin,      -1 }, // Display I2C version
+      { "pin_tft_bl",    &ini_block.tft_bl_pin,       -1 }, // Display backlight
+      { "pin_tft_blx",   &ini_block.tft_blx_pin,      -1 }, // Display backlight (inversed logic)
+      { "pin_nxt_rx",    &ini_block.nxt_rx_pin,       -1 }, // NEXTION input pin
+      { "pin_nxt_tx",    &ini_block.nxt_tx_pin,       -1 }, // NEXTION output pin
+      { "pin_sd_cs",     &ini_block.sd_cs_pin,        -1 }, // SD card select
+      { "pin_sd_detect", &ini_block.sd_detect_pin,    -1 }, // SD card detect
+    #if defined(DEC_VS1053) || defined(DEC_VS1003)
+      { "pin_vs_cs",     &ini_block.vs_cs_pin,        -1 }, // VS1053 pins
+      { "pin_vs_dcs",    &ini_block.vs_dcs_pin,       -1 },
+      { "pin_vs_dreq",   &ini_block.vs_dreq_pin,      -1 },
+    #endif
+      { "pin_shutdown",  &ini_block.shutdown_pin,     -1 }, // Amplifier shut-down pin
+      { "pin_shutdownx", &ini_block.shutdownx_pin,    -1 }, // Amplifier shut-down pin (inversed logic)
+    #ifdef DEC_HELIX
+     #ifndef DEC_HELIX_INT
+      #ifdef DEC_HELIX_SPDIF
+      { "pin_i2s_spdif", &ini_block.i2s_spdif_pin,    -1 },
+      #else
+      { "pin_i2s_bck",   &ini_block.i2s_bck_pin,      -1 }, // I2S interface pins
+      { "pin_i2s_lck",   &ini_block.i2s_lck_pin,      -1 },
+      { "pin_i2s_din",   &ini_block.i2s_din_pin,      -1 },
+      #endif
+     #endif
+    #endif
+    #ifdef ETHERNET
+      { "pin_spi_sck",   &ini_block.spi_sck_pin,      -1 },
+      { "pin_spi_miso",  &ini_block.spi_miso_pin,     -1 },
+      { "pin_spi_mosi",  &ini_block.spi_mosi_pin,     -1 },
+      { "pin_eth_mdc",   &ini_block.eth_mdc_pin,      23 },
+      { "pin_eth_mdio",  &ini_block.eth_mdio_pin,     18 },
+      { "pin_eth_power", &ini_block.eth_power_pin,    16 },
+    #else
+      { "pin_spi_sck",   &ini_block.spi_sck_pin,      18 }, // Note: different for AI Audio kit (14)
+      { "pin_spi_miso",  &ini_block.spi_miso_pin,     19 }, // Note: different for AI Audio kit (2)
+      { "pin_spi_mosi",  &ini_block.spi_mosi_pin,     23 }, // Note: different for AI Audio kit (15)
+    #endif
+      { NULL,            NULL,                        0  }  // End of list
   } ;
   int         i ;                                         // Loop control
   int         count = 0 ;                                 // Number of keys found
@@ -1904,9 +1843,9 @@ void readIOprefs()
       }
     }
     *p = ival ;                                           // Set pinnumber in ini_block
-    if ( ival > 0 )                                       // Only show configured pins
+    if ( ival >= 0 )                                      // Only show configured pins
     {
-      ESP_LOGI ( TAG, "%s set to %d",                     // Show result
+      ESP_LOGI ( TAG, "'%-13s' set to %d",      // Show result
                  klist[i].gname,
                  ival ) ;
     }
@@ -1966,7 +1905,6 @@ String readprefs ( bool output )
       analyzeCmd ( cmd.c_str() ) ;                          // Analyze it
     }
   }
-  numprefs = i ;                                            // sAVE THE NUMBER OF PRERERENCES FOUND
   if ( i == 0 )                                             // Any key seen?
   {
     outstr = String ( "No preferences found.\n"
@@ -2301,13 +2239,11 @@ void  mk_lsan()
     {
       lpw = buf.substring ( inx + 1 ) ;                  // Isolate password
       lssid = buf.substring ( 0, inx ) ;                 // Holds SSID now
-      winfo.ssid = strdup ( lssid.c_str() ) ;            // Set ssid of new element for wifilist
-      winfo.passphrase = strdup ( lpw.c_str() ) ;
+      winfo.ssid = (char*)lssid.c_str() ;                       // Set ssid of new element for wifilist
+      winfo.passphrase = (char*)lpw.c_str() ;
       wifilist.push_back ( winfo ) ;                     // Add to list
       wifiMulti.addAP ( winfo.ssid,                      // Add to wifi acceptable network list
                         winfo.passphrase ) ;
-      ESP_LOGI ( TAG, "Added %s to list of networks",
-                  lssid.c_str() ) ;
     }
   }
 }
@@ -2356,61 +2292,6 @@ void tftlog ( const char *str, bool newline )
 
 
 //**************************************************************************************************
-//                                   F I N D N S I D                                               *
-//**************************************************************************************************
-// Find the namespace ID for the namespace passed as parameter.                                    *
-//**************************************************************************************************
-uint8_t FindNsID ( const char* ns )
-{
-  esp_err_t                 result = ESP_OK ;                 // Result of reading partition
-  uint32_t                  offset = 0 ;                      // Offset in nvs partition
-  uint8_t                   i ;                               // Index in Entry 0..125
-  uint8_t                   bm ;                              // Bitmap for an entry
-  uint8_t                   res = 0xFF ;                      // Function result
-
-  while ( offset < nvs->size )
-  {
-    result = esp_partition_read ( nvs, offset,                // Read 1 page in nvs partition
-                                  &nvsbuf,
-                                  sizeof(nvsbuf) ) ;
-    if ( result != ESP_OK )
-    {
-      ESP_LOGE ( TAG, "Error reading NVS!" ) ;
-      break ;
-    }
-    i = 0 ;
-    while ( i < 126 )
-    {
-
-      bm = ( nvsbuf.Bitmap[i / 4] >> ( ( i % 4 ) * 2 ) ) ;    // Get bitmap for this entry,
-      bm &= 0x03 ;                                            // 2 bits for one entry
-      if ( ( bm == 2 ) &&
-           ( nvsbuf.Entry[i].Ns == 0 ) &&
-           ( strcmp ( ns, nvsbuf.Entry[i].Key ) == 0 ) )
-      {
-        res = nvsbuf.Entry[i].Data & 0xFF ;                   // Return the ID
-        offset = nvs->size ;                                  // Stop outer loop as well
-        break ;
-      }
-      else
-      {
-        if ( bm == 2 )
-        {
-          i += nvsbuf.Entry[i].Span ;                         // Next entry
-        }
-        else
-        {
-          i++ ;
-        }
-      }
-    }
-    offset += sizeof(nvs_page) ;                              // Prepare to read next page in nvs
-  }
-  return res ;
-}
-
-
-//**************************************************************************************************
 //                            B U B B L E S O R T K E Y S                                          *
 //**************************************************************************************************
 // Bubblesort the nvskeys.                                                                         *
@@ -2418,11 +2299,11 @@ uint8_t FindNsID ( const char* ns )
 void bubbleSortKeys ( uint16_t n )
 {
   uint16_t i, j ;                                             // Indexes in nvskeys
-  char     tmpstr[16] ;                                       // Temp. storage for a key
+  char     tmpstr[NVS_KEY_NAME_MAX_SIZE] ;                    // Temp. storage for a key
 
   for ( i = 0 ; i < n - 1 ; i++ )                             // Examine all keys
   {
-    for ( j = 0 ; j < n - i - 1 ; j++ )                       // Compare to following keys
+    for ( j = 0 ; j < n - i - 1 ; j++ )                       // Compare to next keys
     {
       if ( strcmp ( nvskeys[j], nvskeys[j + 1] ) > 0 )        // Next key out of order?
       {
@@ -2443,47 +2324,27 @@ void bubbleSortKeys ( uint16_t n )
 //**************************************************************************************************
 void fillkeylist()
 {
-  esp_err_t    result = ESP_OK ;                                // Result of reading partition
-  uint32_t     offset = 0 ;                                     // Offset in nvs partition
-  uint16_t     i ;                                              // Index in Entry 0..125.
-  uint8_t      bm ;                                             // Bitmap for an entry
-  uint16_t     nvsinx = 0 ;                                     // Index in nvskey table
+  nvs_iterator_t   it ;                                         // Iterator for NVS
+  nvs_entry_info_t info ;                                       // Info in entry
+  uint16_t         nvsinx = 0 ;                                 // Index in nvskey table
 
-  keynames.clear() ;                                            // Clear the list
-  while ( offset < nvs->size )
+  it = nvs_entry_find ( "nvs", NAME, NVS_TYPE_ANY ) ;           // Get first entry
+  while ( it )
   {
-    result = esp_partition_read ( nvs, offset,                  // Read 1 page in nvs partition
-                                  &nvsbuf,
-                                  sizeof(nvsbuf) ) ;
-    if ( result != ESP_OK )
+    nvs_entry_info ( it, &info ) ;                              // Get info on this entry
+    ESP_LOGI ( TAG, "%s::%s type=%d",
+               info.namespace_name, info.key, info.type ) ;
+    if ( info.type == NVS_TYPE_STR )                            // Only string are used
     {
-      ESP_LOGE ( TAG, "Error reading NVS!" ) ;
-      break ;
-    }
-    i = 0 ;
-    while ( i < 126 )
-    {
-      bm = ( nvsbuf.Bitmap[i / 4] >> ( ( i % 4 ) * 2 ) ) ;      // Get bitmap for this entry,
-      bm &= 0x03 ;                                              // 2 bits for one entry
-      if ( bm == 2 )                                            // Entry is active?
+      strcpy ( nvskeys[nvsinx], info.key ) ;                    // Save key in table
+      if ( ++nvsinx == MAXKEYS )
       {
-        if ( nvsbuf.Entry[i].Ns == namespace_ID )               // Namespace right?
-        {
-          strcpy ( nvskeys[nvsinx], nvsbuf.Entry[i].Key ) ;     // Yes, save in table
-          if ( ++nvsinx == MAXKEYS )
-          {
-            nvsinx-- ;                                          // Prevent excessive index
-          }
-        }
-        i += nvsbuf.Entry[i].Span ;                             // Next entry
-      }
-      else
-      {
-        i++ ;
+        nvsinx-- ;                                              // Prevent excessive index
       }
     }
-    offset += sizeof(nvs_page) ;                                // Prepare to read next page in nvs
+    it = nvs_entry_next ( it ) ;
   }
+  nvs_release_iterator ( it ) ;                                 // Release resource
   nvskeys[nvsinx][0] = '\0' ;                                   // Empty key at the end
   ESP_LOGI ( TAG, "Read %d keys from NVS", nvsinx ) ;
   bubbleSortKeys ( nvsinx ) ;                                   // Sort the keys
@@ -2574,6 +2435,7 @@ void setup()
   outchunk.datatyp = QDATA ;                              // This chunk dedicated to QDATA
   vTaskDelay ( 3000 / portTICK_PERIOD_MS ) ;              // Wait for PlatformIO monitor to start
   Serial.begin ( 115200 ) ;                               // For debug
+  WRITE_PERI_REG ( RTC_CNTL_BROWN_OUT_REG, 0 ) ;          // Disable brownout detector
   log_printf ( "\n" ) ;
   // Print some memory and sketch info
   log_printf ( "Starting ESP32-radio running on CPU %d at %d MHz.\n",
@@ -2629,7 +2491,6 @@ void setup()
     while ( true ) ;                                     // Impossible to continue
   }
   SPIsem = xSemaphoreCreateMutex(); ;                    // Semaphore for SPI bus
-  namespace_ID = FindNsID ( NAME ) ;                     // Find ID of our namespace in NVS
   fillkeylist() ;                                        // Fill keynames with all keys
   memset ( &ini_block, 0, sizeof(ini_block) ) ;          // Init ini_block
   ini_block.mqttport = 1883 ;                            // Default port for MQTT
@@ -2708,7 +2569,6 @@ void setup()
     // WiFi.setSleep (false ) ;                          // should prevent _poll(): pcb is NULL""error"
     vTaskDelay ( 500 / portTICK_PERIOD_MS ) ;            // ??
     WiFi.persistent ( false ) ;                          // Do not save SSID and password
-    listNetworks() ;                                     // Find WiFi networks
   #endif
   readprefs ( false ) ;                                  // Read preferences
   radioqueue = xQueueCreate ( 10,                        // Create small queue for communication to radiofuncs
@@ -2832,8 +2692,7 @@ void setup()
     2,                                                    // priority of the task
     &xplaytask,                                           // Task handle to keep track of created task
     0 ) ;                                                 // Run on CPU 0
-  vTaskDelay ( 2000 / portTICK_PERIOD_MS ) ;              // Allow playtask to start
-  ESP_LOGI ( TAG, "Playtask started" ) ;
+  vTaskDelay ( 100 / portTICK_PERIOD_MS ) ;               // Allow playtask to start
 #ifdef SDCARD
   sdqueue = xQueueCreate ( 10,                            // Create small queue for communication to sdfuncs
                            sizeof ( qdata_type ) ) ;
@@ -2847,17 +2706,20 @@ void setup()
     0 ) ;                                                 // Run on CPU 0
 #endif
   singleclick = false ;                                   // Might be fantom click
-  vTaskDelay ( 200 / portTICK_PERIOD_MS ) ;               // Allow playtask to start
   if ( dsp_ok )                                           // Is display okay?
   {
+    vTaskDelay ( 2000 / portTICK_PERIOD_MS ) ;            // Yes, allow user to read display text
     dsp_erase() ;                                         // Clear screen
   }
   tftset ( 0, NAME ) ;                                    // Set screen segment text top line
   presetinfo.station_state = ST_PRESET ;                  // Start in preset mode
-  nextPreset ( nvsgetstr ( "preset" ).toInt(), false  ) ; // Restore last preset
-  if ( NetworkFound && ( numprefs > 0 ) )                 // Start if network and preferences available
+  if ( nextPreset ( nvsgetstr ( "preset" ).toInt(),       // Restore last preset
+       false  ) )
   {
-    myQueueSend ( radioqueue, &startcmd ) ;               // Start player in radio mode
+    if ( NetworkFound )                                     // Start with preset if network available
+    {
+      myQueueSend ( radioqueue, &startcmd ) ;               // Start player in radio mode
+    }
   }
 }
 
@@ -3493,6 +3355,7 @@ void loop()
       }
     }
   }
+  delay ( 10 ) ;
 }
 
 
@@ -3741,7 +3604,7 @@ void handlebyte_ch ( uint8_t b )
         else if ( ctseen )                              // Content type seen?
         {
           ESP_LOGI ( TAG, "Switch to DATA, bitrate is " // Show bitrate
-                    "%d, metaint is %d",                // and metaint
+                    "%d kbps, metaint is %d",           // and metaint
                     bitrate, metaint ) ;
           setdatamode ( DATA ) ;                        // Expecting data now
           datacount = metaint ;                         // Number of bytes before first metadata
@@ -4064,7 +3927,7 @@ const char* analyzeCmd ( const char* str )
 //   mqttport   = 1883                      // Set MQTT port to use, default 1883 *)               *
 //   mqttuser   = myuser                    // Set MQTT user for authentication *)                 *
 //   mqttpasswd = mypassword                // Set MQTT password for authentication *)             *
-//   mqttrefresh                            // Refresh all MQTT items
+//   mqttrefresh                            // Refresh all MQTT items                              *
 //   clk_server = pool.ntp.org              // Time server to be used *)                           *
 //   clk_offset = <-11..+14>                // Offset with respect to UTC in hours *)              *
 //   clk_dst    = <1..2>                    // Offset during daylight saving time in hours *)      *
@@ -4211,7 +4074,7 @@ const char* analyzeCmd ( const char* par, const char* val )
   else if ( argument == "test" )                      // Test command
   {
     sprintf ( reply, "Free memory is %d/%d, "         // Get some info to display
-              "chunks in queue %d, bitrate %d kbps",
+              "chunks in queue %d, bitrate %d kbps\n",
               heapspace,
               ESP.getFreeHeap(),
               uxQueueMessagesWaiting ( dataqueue ),
@@ -4272,10 +4135,6 @@ const char* analyzeCmd ( const char* par, const char* val )
     {
       mqttpub.triggerall() ;                          // Yes, request to republish all items
     }
-  }
-  else if ( argument == "getnetworks" )               // List all WiFi networks?
-  {
-    sprintf ( reply, networks.c_str() ) ;             // Reply is SSIDs
   }
   else if ( argument.startsWith ( "clk_" ) )          // TOD parameter?
   {
@@ -4407,6 +4266,7 @@ void playtask ( void * parameter )
   // static bool once = true ;                                      // Show chunk once  #if defined(DEC_VS1053) || defined(DEC_VS1003)
   bool VS_okay ;                                                    // VS isw okay or not
 
+  ESP_LOGI ( TAG, "Starting VS1053 playtask.." ) ;
   VS_okay = VS1053_begin ( ini_block.vs_cs_pin,                     // Make instance of player and initialize
                            ini_block.vs_dcs_pin,
                            ini_block.vs_dreq_pin,
@@ -4467,7 +4327,7 @@ void playtask ( void * parameter )
 }
 #endif
 
-#if defined(DEC_HELIX) || defined(DEC_HELIX_AI)
+#if defined(DEC_HELIX)
 //**************************************************************************************************
 //                               P L A Y T A S K ( I 2 S )                                         *
 //**************************************************************************************************
@@ -4484,29 +4344,40 @@ void playtask ( void * parameter )
 void playtask ( void * parameter )
 {
   esp_err_t        pinss_err = ESP_FAIL ;                            // Result of i2s_set_pin
-  i2s_port_t       i2s_num = I2S_NUM_0 ;                             // i2S port number
   i2s_config_t     i2s_config ;                                      // I2S configuration
   bool             playing = false ;                                 // Are we playing or not?
 
   memset ( &i2s_config, 0, sizeof(i2s_config) ) ;                    // Clear config struct
   i2s_config.mode                   = (i2s_mode_t)(I2S_MODE_MASTER | // I2S mode (5)
                                           I2S_MODE_TX) ;
-  i2s_config.sample_rate            = 44100 ;
-  i2s_config.bits_per_sample        = I2S_BITS_PER_SAMPLE_16BIT ;    // (16)
-  i2s_config.channel_format         = I2S_CHANNEL_FMT_RIGHT_LEFT ;   // (0)
-  #if ESP_ARDUINO_VERSION_MAJOR >= 2                                 // New version?
-    i2s_config.communication_format = I2S_COMM_FORMAT_STAND_MSB ;    // Yes, use new definition
+  #ifdef DEC_HELIX_SPDIF
+    i2s_config.use_apll               = true ;
+    i2s_config.sample_rate            = 44100 * 2 ;                  // For spdif: biphase and 32 bits
+    i2s_config.bits_per_sample        = I2S_BITS_PER_SAMPLE_32BIT ;  // and 32 bits
+    #if ESP_ARDUINO_VERSION_MAJOR >= 2                               // New version?
+      i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2S ;  // Yes, use new definition
+    #else
+      i2s_config.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB) ;
+    #endif
   #else
-    i2s_config.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB) ;
+    i2s_config.sample_rate            = 44100 ;                      // 44100
+    i2s_config.bits_per_sample        = I2S_BITS_PER_SAMPLE_16BIT ;  // (16)
+    #if ESP_ARDUINO_VERSION_MAJOR >= 2                               // New version?
+      i2s_config.communication_format = I2S_COMM_FORMAT_STAND_MSB ;  // Yes, use new definition
+    #else
+      i2s_config.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB) ;
+    #endif
+    i2s_config.dma_buf_count        = 8 ;
+    i2s_config.dma_buf_len          = 256 ;
   #endif
+  i2s_config.channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT ;   // (0)
   i2s_config.intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1 ;         // High interrupt priority
-  i2s_config.dma_buf_count        = 16,
-  i2s_config.dma_buf_len          = 256,
-  //i2s_config.use_apll           = false ;
+  i2s_config.dma_buf_count        = 12 ;
+  i2s_config.dma_buf_len          = 256 ;
   i2s_config.tx_desc_auto_clear   = true ;                         // clear tx descriptor on underflow
-  i2s_config.fixed_mclk           = I2S_PIN_NO_CHANGE ;            // No pin for MCLK
-  //i2s_config.mclk_multiple      = (i2s_mclk_multiple_t)0 ;
-  //i2s_config.bits_per_chan      = (i2s_bits_per_chan_t)0 ;       // 0 = equal to bits per sample
+  //i2s_config.fixed_mclk         = 0 ;                            // No (pin for) MCLK
+  //i2s_config.mclk_multiple      = I2S_MCLK_MULTIPLE_DEFAULT ;    // = 0
+  //i2s_config.bits_per_chan      = I2S_BITS_PER_CHAN_DEFAULT ;    // = 0
   #ifdef DEC_HELIX_INT
     i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER |               // Set I2S mode for internal DAC
                                    I2S_MODE_TX |                   // (4)
@@ -4528,35 +4399,39 @@ void playtask ( void * parameter )
   #endif
   MP3Decoder_AllocateBuffers() ;                                    // Init HELIX buffers
   AACDecoder_AllocateBuffers() ;                                    // Init HELIX buffers
-  if ( i2s_driver_install ( i2s_num, &i2s_config, 0, NULL ) != ESP_OK )
+  if ( i2s_driver_install ( I2S_NUM_0, &i2s_config, 0, NULL ) != ESP_OK )
   {
     ESP_LOGE ( TAG, "I2S install error!" ) ;
   }
   #ifdef DEC_HELIX_INT                                              // Use internal (8 bit) DAC?
     ESP_LOGI ( TAG, "Output to internal DAC" ) ;                    // Show output device
-    pinss_err = i2s_set_pin ( i2s_num, NULL ) ;                     // Yes, default pins for internal DAC
+    pinss_err = i2s_set_pin ( I2S_NUM_0, NULL ) ;                   // Yes, default pins for internal DAC
     i2s_set_dac_mode ( I2S_DAC_CHANNEL_BOTH_EN ) ;
   #else
-    i2s_pin_config_t pin_config ;                                   // I2s pin config
-    pin_config.bck_io_num    = ini_block.i2s_bck_pin ;              // This is BCK pin
-    pin_config.ws_io_num     = ini_block.i2s_lck_pin ;              // This is L(R)CK pin
-    pin_config.data_out_num  = ini_block.i2s_din_pin ;              // This is DATA output pin
-    pin_config.data_in_num   = I2S_PIN_NO_CHANGE ;                  // No input
+    i2s_pin_config_t pin_config ;
     #if ESP_ARDUINO_VERSION_MAJOR >= 2
-      pin_config.mck_io_num    = I2S_PIN_NO_CHANGE ;                // MCK not used
+      pin_config.mck_io_num   = I2S_PIN_NO_CHANGE ;                 // MCK not used
     #endif
-    ESP_LOGI ( TAG, "Output to I2S, pins %d, %d and %d",            // Show pins used for output device
-               pin_config.bck_io_num,                               // This is the BCK (bit clock) pin
-               pin_config.ws_io_num,                                // This is L(R)CK pin
-               pin_config.data_out_num ) ;                          // This is DATA output pin
-    if ( ( ini_block.i2s_bck_pin + 
-           ini_block.i2s_lck_pin +
-           ini_block.i2s_din_pin ) > 2 )                            // Check for legal pins
-    {
-      pinss_err = i2s_set_pin ( i2s_num, &pin_config ) ;            // Set I2S pins
-    }
+    pin_config.data_in_num    = I2S_PIN_NO_CHANGE ;
+    #ifdef DEC_HELIX_SPDIF
+      pin_config.bck_io_num   = I2S_PIN_NO_CHANGE ;
+      pin_config.ws_io_num    = I2S_PIN_NO_CHANGE ;
+      pin_config.data_out_num = ini_block.i2s_spdif_pin ;
+      pin_config.data_in_num  = I2S_PIN_NO_CHANGE ;
+      ESP_LOGI ( TAG, "Output to SPDIF, pin %d",                    // Show pin used for output device
+                 pin_config.data_out_num ) ;
+    #else
+      pin_config.bck_io_num   = ini_block.i2s_bck_pin ;             // This is BCK pin
+      pin_config.ws_io_num    = ini_block.i2s_lck_pin ;             // This is L(R)CK pin
+      pin_config.data_out_num = ini_block.i2s_din_pin ;             // This is DATA output pin
+      ESP_LOGI ( TAG, "Output to I2S, pins %d, %d and %d",          // Show pins used for output device
+                 pin_config.bck_io_num,                             // This is the BCK (bit clock) pin
+                 pin_config.ws_io_num,                              // This is L(R)CK pin
+                 pin_config.data_out_num ) ;                        // This is DATA output pin
+    #endif
+    pinss_err = i2s_set_pin ( I2S_NUM_0, &pin_config ) ;            // Set I2S pins
   #endif
-  i2s_zero_dma_buffer ( i2s_num ) ;                                 // Zero the buffer
+  i2s_zero_dma_buffer ( I2S_NUM_0 ) ;                               // Zero the buffer
   if ( pinss_err != ESP_OK )                                        // Check error condition
   {
     ESP_LOGE ( TAG, "I2S setpin error!" ) ;                         // Rport bad pins
@@ -4574,7 +4449,7 @@ void playtask ( void * parameter )
         case QDATA:
           if ( playing )                                            // Are we playing?
           {
-            playChunk ( i2s_num, inchunk.buf ) ;                    // Play this chunk
+            playChunk ( inchunk.buf ) ;                             // Play this chunk
           }
           totalcount += sizeof(inchunk.buf) ;                       // Count the bytes
           break ;
@@ -4590,14 +4465,14 @@ void playtask ( void * parameter )
           ESP_LOGI ( TAG, "Playtask stop song" ) ;
           playing = false ;                                         // Reset local play status
           playingstat = 0 ;                                         // Status for MQTT
-          i2s_stop ( i2s_num ) ;                                    // Stop DAC
+          i2s_stop ( I2S_NUM_0 ) ;                                  // Stop DAC
           mqttpub.trigger ( MQTT_PLAYING ) ;                        // Request publishing to MQTT
           //vTaskDelay ( 500 / portTICK_PERIOD_MS ) ;               // Pause for a short time
           break ;
         case QSTOPTASK:
           ESP_LOGI ( TAG, "Stop Playtask" ) ;
           playing = false ;                                         // Reset local play status
-          i2s_stop ( i2s_num ) ;                                    // Stop DAC
+          i2s_stop ( I2S_NUM_0 ) ;                                  // Stop DAC
           vTaskDelete ( NULL ) ;                                    // Stop task
           break ;
         default:
