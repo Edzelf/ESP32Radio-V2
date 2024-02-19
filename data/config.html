@@ -32,7 +32,7 @@
     <script>
       function httpGet ( theReq )
       {
-        var theUrl = "/" + theReq + "&version=" + Math.random() ;
+        var theUrl = "/" + theReq + "?version=" + Math.random() ;
         var xhr = new XMLHttpRequest() ;
         xhr.onreadystatechange = function() {
           if ( xhr.readyState == XMLHttpRequest.DONE )
