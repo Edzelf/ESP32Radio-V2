@@ -4,6 +4,8 @@ New version of the well known ESP32 Radio.  Now optional I2S output and SP/DIF o
 - Do not forget to upload the data directory to the ESP32.
 - SD cards supported, but still experimental.
 
+![SAM_2922](https://github.com/Edzelf/ESP32Radio-V2/assets/18257026/a58f7b7e-cdd4-4d7f-96b8-62fa487de906)
+
 Updates:
 - 12-mar-2024: Add document with building instructions.  New PCB available.
 - 19-feb-2024: SP/DIF (Toslink) output, fixed mono bug.
