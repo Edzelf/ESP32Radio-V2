@@ -66,21 +66,21 @@
       <label for="HF"><big>Treble Freq:</big></label>
       <br>
       <select class="select" onChange="handletone(this)" id="tonehf">
-        <option value="1">1 kHz</option>
-        <option value="2">2 kHz</option>
-        <option value="3">3 kHz</option>
-        <option value="4">4 kHz</option>
-        <option value="5">5 kHz</option>
-        <option value="6">6 kHz</option>
-        <option value="7">7 kHz</option>
-        <option value="8">8 kHz</option>
-        <option value="9">9 kHz</option>
-        <option value="10">10 kHz</option>
-        <option value="11">11 kHz</option>
-        <option value="12">12 kHz</option>
-        <option value="13">13 kHz</option>
-        <option value="14">14 kHz</option>
-        <option value="15">15 kHz</option>
+       <option value="1">1 kHz</option>
+       <option value="2">2 kHz</option>
+       <option value="3">3 kHz</option>
+       <option value="4">4 kHz</option>
+       <option value="5">5 kHz</option>
+       <option value="6">6 kHz</option>
+       <option value="7">7 kHz</option>
+       <option value="8">8 kHz</option>
+       <option value="9">9 kHz</option>
+       <option value="10">10 kHz</option>
+       <option value="11">11 kHz</option>
+       <option value="12">12 kHz</option>
+       <option value="13">13 kHz</option>
+       <option value="14">14 kHz</option>
+       <option value="15">15 kHz</option>
       </select>
       <br><br> 
      </center></td>
@@ -142,10 +142,10 @@
    <br><br>
    <p>Find new radio stations at <a target="blank" href="http://www.internet-radio.com">http://www.internet-radio.com</a><br>
       or use the Search function from the menu.</p>
-   <p>Examples: us5.internet-radio.com:8121, 1a-60er.radionetz.de/1a-60er.mp3, 85.17.121.103:8800</p><br>
+   <br><br>
   </center>
   <script>
-   function httpGet ( theReq )
+    function httpGet ( theReq )
    {
     var theUrl = "/?" + theReq + "&version=" + Math.random() ;
     var xhr = new XMLHttpRequest() ;
@@ -215,7 +215,6 @@
    }
 
    // Fill preset list initially
-   //
    function onloadfunc()
    {
      var i, sel, opt, lines, parts ;
@@ -227,30 +226,30 @@
          lines = xhr.responseText.split ( "\n" ) ;
          for ( i = 0 ; i < ( lines.length-1 ) ; i++ )
          {
-           sel = document.getElementById ( "preset" ) ;
-           parts = lines[i].split ( "=" ) ;
-           if ( parts[0].indexOf ( "preset_" ) == 0 )
+          sel = document.getElementById ( "preset" ) ;
+          parts = lines[i].split ( "=" ) ;
+          if ( parts[0].indexOf ( "preset_" ) == 0 )
+          {
+           opt = document.createElement ( "OPTION" ) ;
+           opt.value = parts[0].substring ( 7 ) ;
+           opt.text = parts[1] ;
+           sel.add( opt ) ;
+          }
+          if ( ( parts[0].indexOf ( "tone" ) == 0 ) ||
+               ( parts[0] == "preset" ) )
+          {
+           selectItemByValue ( parts[0], parts[1] ) ;
+          }
+          // No tone settings if no VS1053 decoder 
+          if ( parts[0].indexOf ( "decoder" ) == 0 )
+          {
+           if ( parts[1].indexOf ( "helix" ) == 0 )
            {
-             opt = document.createElement ( "OPTION" ) ;
-             opt.value = parts[0].substring ( 7 ) ;
-             opt.text = parts[1] ;
-             sel.add( opt ) ;
+           var toneobj = document.getElementById("t1") ;
+            toneobj.deleteRow(2);
+            toneobj.deleteRow(1);
            }
-           if ( ( parts[0].indexOf ( "tone" ) == 0 ) ||
-                ( parts[0] == "preset" ) )
-           {
-             selectItemByValue ( parts[0], parts[1] ) ;
-           }
-           // No tone settings if no VS1053 decoder 
-           if ( parts[0].indexOf ( "decoder" ) == 0 )
-           {
-             if ( parts[1].indexOf ( "helix" ) == 0 )
-             {
-              var toneobj = document.getElementById("t1") ;
-              toneobj.deleteRow(2);
-              toneobj.deleteRow(1);
-             }
-           }
+          }
          }
          setTimeout(myRefresh,5000) ;
        }
