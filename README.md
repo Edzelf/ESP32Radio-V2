@@ -5,6 +5,7 @@ New version of the well known ESP32 Radio.  Now optional I2S output and SP/DIF o
 - SD cards supported, but still experimental.
 
 Updates:
+- 12-mar-2024: Add document with building instructions.  New PCB available.
 - 19-feb-2024: SP/DIF (Toslink) output, fixed mono bug.
 - 26-dec-2023: Correct crash with VS1053 and empty preferences.
 - 14-dec-2023: Add "mqttrefresh" command to refresh all mqtt items.
