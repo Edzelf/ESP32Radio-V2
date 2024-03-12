@@ -108,7 +108,7 @@
 
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Mon, 19 Feb 2024 16:30:00 GMT"
+#define VERSION     "Wed, 06 Mar 2024 16:00:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "soc/soc.h"                                      // For brown-out detector setting
@@ -322,10 +322,8 @@ PubSubClient         mqttclient ( wmqttclient ) ;        // Client for MQTT subs
 TaskHandle_t         maintask ;                          // Taskhandle for main task
 TaskHandle_t         xplaytask ;                         // Task handle for playtask
 TaskHandle_t         xsdtask ;                           // Task handle for SD task
-SemaphoreHandle_t    SPIsem = NULL ;                     // For exclusive SPI usage
 hw_timer_t*          timer = NULL ;                      // For timer
 char                 timetxt[9] ;                        // Converted timeinfo
-char                 cmd[130] ;                          // Command from MQTT or Serial
 const qdata_struct   stopcmd = {QSTOPSONG} ;             // Command for radio/SD
 const qdata_struct   startcmd = {QSTARTSONG} ;           // Command for radio/SD
 QueueHandle_t        radioqueue = 0 ;                    // Queue for icecast commands
@@ -339,6 +337,7 @@ datamode_t           datamode ;                          // State of datastream
 int                  metacount ;                         // Number of bytes in metadata
 int                  datacount ;                         // Counter databytes before metadata
 RTC_NOINIT_ATTR char metalinebf[METASIZ + 1] ;           // Buffer for metaline/ID3 tags
+RTC_NOINIT_ATTR char cmd[130] ;                          // Command from MQTT or Serial
 int16_t              metalinebfx ;                       // Index for metalinebf
 String               icystreamtitle ;                    // Streamtitle from metadata
 String               icyname ;                           // Icecast station name
@@ -373,6 +372,8 @@ bool                 dsp_ok = false ;                    // Display okay or not
 int                  ir_intcount = 0 ;                   // For test IR interrupts
 bool                 spftrigger = false ;                // To trigger execution of special functions
 const char*          fixedwifi = "" ;                    // Used for FIXEDWIFI option
+File                 SPIFFSfile ;                        /// File handle for SPIFFS file
+
 std::vector<WifiInfo_t> wifilist ;                       // List with wifi_xx info
 
 // nvs stuff
@@ -2491,7 +2492,6 @@ void setup()
     ESP_LOGE ( TAG, "Partition NVS not found!" ) ;       // Very unlikely...
     while ( true ) ;                                     // Impossible to continue
   }
-  SPIsem = xSemaphoreCreateMutex(); ;                    // Semaphore for SPI bus
   fillkeylist() ;                                        // Fill keynames with all keys
   memset ( &ini_block, 0, sizeof(ini_block) ) ;          // Init ini_block
   ini_block.mqttport = 1883 ;                            // Default port for MQTT
@@ -2499,8 +2499,8 @@ void setup()
   ini_block.clk_server = "pool.ntp.org" ;                // Default server for NTP
   ini_block.clk_offset = 1 ;                             // Default Amsterdam time zone
   ini_block.clk_dst = 1 ;                                // DST is +1 hour
-  ini_block.bat0 = 0 ;                                   // Battery ADC levels not yet defined
-  ini_block.bat100 = 0 ;
+  ini_block.bat0 = 2600 ;                                // Battery ADC level for 0 percent
+  ini_block.bat100 = 2950 ;                              // Battery ADC level for 100 percent
   readIOprefs() ;                                        // Read pins used for SPI, TFT, VS1053, IR,
                                                          // Rotary encoder
   for ( i = 0 ; (pinnr = progpin[i].gpio) >= 0 ; i++ )   // Check programmable input pins
@@ -2685,7 +2685,7 @@ void setup()
     gettime() ;                                           // Sync time
   }
   adc1_config_width ( ADC_WIDTH_12Bit ) ;
-  adc1_config_channel_atten ( ADC1_CHANNEL_0, ADC_ATTEN_0db ) ;
+  adc1_config_channel_atten ( ADC1_CHANNEL_0, ADC_ATTEN_DB_11 ) ;  // VP/GPIO36
   xTaskCreatePinnedToCore (
     playtask,                                             // Task to play data in dataqueue.
     "Playtask",                                           // Name of task.
@@ -2840,7 +2840,7 @@ void handle_mp3list ( AsyncWebServerRequest *request )
 //**************************************************************************************************
 void handle_mp3list ( AsyncWebServerRequest *request )
 {
-  request->send ( 200, "text/plain", String ( "<empty>" ) ) ;
+  request->send ( 200, "text/plain", "<empty>" ) ;
 }
 #endif
 
@@ -2870,7 +2870,7 @@ void handle_getprefs ( AsyncWebServerRequest *request )
 //**************************************************************************************************
 void handle_saveprefs ( AsyncWebServerRequest *request )
 {
-  String reply = "Config saved" ;                      // Default reply
+  const char* reply = "Config saved" ;                 // Default reply
 
   writeprefs ( request ) ;                             // Write to NVS
   request->send ( 200, "text/plain", reply ) ;         // Send the reply
@@ -2885,9 +2885,9 @@ void handle_saveprefs ( AsyncWebServerRequest *request )
 void handle_getdefs ( AsyncWebServerRequest *request )
 {
   String ct ;                                         // Content type
-  String path ;                                       // File with default settings
+  const char* path ;                                  // File with default settings
 
-  path = String ( "/defaultprefs.txt" ) ;             // Set file name
+  path = "/defaultprefs.txt" ;                        // Set file name
   if ( SPIFFS.exists ( path ) )                       // Does it exist in SPIFFS?
   {
     ct = getContentType ( path ) ;                    // Yes, get content type
@@ -2896,7 +2896,7 @@ void handle_getdefs ( AsyncWebServerRequest *request )
   else
   {
     request->send ( 200, "text/plain",                // No send empty preferences
-                    String ( "<empty>" ) ) ;
+                    "<empty>" ) ;
   }
 }
 
@@ -3142,20 +3142,22 @@ void chk_enc()
   switch ( enc_menu_mode )                                    // Which mode (VOLUME, PRESET, TRACK)?
   {
     case VOLUME :
-      rotationcount *= 4 ;                                    // Step by 4 percent
-      if ( ( ini_block.reqvol + rotationcount ) < 0 )         // Limit volume
+      if ( ! muteflag )                                       // Do not handle if muted
       {
-        ini_block.reqvol = 0 ;                                // Limit to normal values
+        rotationcount *= 4 ;                                  // Step by 4 percent
+        if ( ( ini_block.reqvol + rotationcount ) < 0 )       // Limit volume
+        {
+          ini_block.reqvol = 0 ;                              // Limit to normal values
+        }
+        else if ( ( ini_block.reqvol + rotationcount ) > 100 )
+        {
+          ini_block.reqvol = 100 ;                            // Limit to normal values
+        }
+        else
+        {
+          ini_block.reqvol += rotationcount ;
+        }
       }
-      else if ( ( ini_block.reqvol + rotationcount ) > 100 )
-      {
-        ini_block.reqvol = 100 ;                              // Limit to normal values
-      }
-      else
-      {
-        ini_block.reqvol += rotationcount ;
-      }
-      muteflag = false ;                                      // Mute off
       break ;
     case PRESET :
       if ( ( enc_preset + rotationcount ) < 0 )               // Negative not allowed
@@ -3832,7 +3834,7 @@ void handle_notfound ( AsyncWebServerRequest *request )
       continue ;
     }
     cmd = key + String ( "=" ) + contents ;           // Format command to analyze
-    ESP_LOGI ( TAG, "Http command is %s", cmd.c_str() ) ;
+    //ESP_LOGI ( TAG, "Http command is %s", cmd.c_str() ) ;
     p = analyzeCmd ( cmd.c_str() ) ;                  // Analyze command
     sndstr += String ( p ) ;                          // Content of HTTP response follows the header
   }
@@ -3855,7 +3857,7 @@ void handle_notfound ( AsyncWebServerRequest *request )
   #endif
   if ( SPIFFS.exists ( path ) )                       // Does it exist in SPIFFS?
   {
-    ct = getContentType ( path ) ;                    // Get content type
+    ct = getContentType ( path.c_str() ) ;            // Get content type
     request->send ( SPIFFS, path, ct ) ;              // Send to client
   }
   else
@@ -4168,11 +4170,11 @@ const char* analyzeCmd ( const char* par, const char* val )
   }
   else if ( argument.startsWith ( "bat" ) )           // Battery ADC value?
   {
-    if ( argument.indexOf ( "100" ) == 3 )            // 100 percent value?
+    if ( argument.indexOf ( "100" ) )                 // 100 percent value?
     {
       ini_block.bat100 = ivalue ;                     // Yes, set it
     }
-    else if ( argument.indexOf ( "0" ) == 3 )         // 0 percent value?
+    else if ( argument.indexOf ( "0" ) )              // 0 percent value?
     {
       ini_block.bat0 = ivalue ;                       // Yes, set it
     }

@@ -39,19 +39,19 @@ const char* getEncryptionType ( wifi_auth_mode_t thisType )
 //                                     G E T C O N T E N T T Y P E                                 *
 //**************************************************************************************************
 // Returns the contenttype of a file to send to a client.                                          *
+// Note that the strstr function searches for the firsty occurence.  So the function will fail for *
+// filenames like "abc.html.ico".                                                                  *
 //**************************************************************************************************
-String getContentType ( String filename )
+String getContentType ( const char* filename )
 {
-  if      ( filename.endsWith ( ".html" ) ) return "text/html" ;
-  else if ( filename.endsWith ( ".png"  ) ) return "image/png" ;
-  else if ( filename.endsWith ( ".gif"  ) ) return "image/gif" ;
-  else if ( filename.endsWith ( ".jpg"  ) ) return "image/jpeg" ;
-  else if ( filename.endsWith ( ".ico"  ) ) return "image/x-icon" ;
-  else if ( filename.endsWith ( ".css"  ) ) return "text/css" ;
-  else if ( filename.endsWith ( ".zip"  ) ) return "application/x-zip" ;
-  else if ( filename.endsWith ( ".gz"   ) ) return "application/x-gzip" ;
-  else if ( filename.endsWith ( ".mp3"  ) ) return "audio/mpeg" ;
-  else if ( filename.endsWith ( ".pw"   ) ) return "" ;              // Passwords are secret
+  if ( strstr ( filename, ".html" ) ) return "text/html" ;
+  if ( strstr ( filename, ".png"  ) ) return "image/png" ;
+  if ( strstr ( filename, ".gif"  ) ) return "image/gif" ;
+  if ( strstr ( filename, ".jpg"  ) ) return "image/jpeg" ;
+  if ( strstr ( filename, ".ico"  ) ) return "image/x-icon" ;
+  if ( strstr ( filename, ".css"  ) ) return "text/css" ;
+  if ( strstr ( filename, ".mp3"  ) ) return "audio/mpeg" ;
+  if ( strstr ( filename, ".js"   ) ) return "text/javascript" ;
   return "text/plain" ;
 }
 
