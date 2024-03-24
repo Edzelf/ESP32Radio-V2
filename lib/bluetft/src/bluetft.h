@@ -11,6 +11,10 @@
 #define BLUETFT_H
 #include <Adafruit_ST7735.h>
 
+#include "FreeSans9pt7b_a.h"
+#define Font2Name FreeSans9pt7b_a
+#define Font2YcursorShift 12  // for details see: https://learn.adafruit.com/adafruit-gfx-graphics-library/using-fonts   search "baseline"
+
 #define TIMEPOS     -52                         // Position (column) of time in topline relative to end
 #define INIPARS     ini_block.tft_cs_pin, ini_block.tft_dc_pin  // Prameters for dsp_begin
 #define DISPLAYTYPE "BLUETFT"
@@ -34,14 +38,16 @@ struct scrseg_struct                                  // For screen segments
 {
   bool     update_req ;                               // Request update of screen
   uint16_t color ;                                    // Textcolor
+  uint16_t size ;                                     // Text size
   uint16_t y ;                                        // Begin of segment row
   uint16_t height ;                                   // Height of segment
+  uint16_t str_max_len ;                              // Max chars in a segment
   String   str ;                                      // String to be displayed
 } ;
 
 
 // Data to display.  There are TFTSECS sections
-#define TFTSECS 4
+#define TFTSECS 5
 
 #define tftdata             bluetft_tftdata
 #define displaybattery      bluetft_displaybattery
@@ -50,14 +56,17 @@ struct scrseg_struct                                  // For screen segments
 
 extern Adafruit_ST7735*     bluetft_tft ;                                 // For instance of display driver
 
+void SetFont(uint8_t Size);
+void SetCursor(int16_t x, int16_t y);
+
 // Various macro's to mimic the ST7735 version of display functions
 #define dsp_setRotation()       bluetft_tft->setRotation ( 1 )            // Use landscape format (3 for upside down)
 #define dsp_print(a)            bluetft_tft->print ( a )                  // Print a string 
 #define dsp_println(b)          bluetft_tft->println ( b )                // Print a string followed by newline 
 #define dsp_fillRect(a,b,c,d,e) bluetft_tft->fillRect ( a, b, c, d, e ) ; // Fill a rectange
-#define dsp_setTextSize(a)      bluetft_tft->setTextSize(a)               // Set the text size
+#define dsp_setTextSize(a)      SetFont(a)               // Set the text size
 #define dsp_setTextColor(a)     bluetft_tft->setTextColor(a)              // Set the text color
-#define dsp_setCursor(a,b)      bluetft_tft->setCursor ( a, b )           // Position the cursor
+#define dsp_setCursor(a,b)      SetCursor( a, b )           // Position the cursor
 #define dsp_erase()             bluetft_tft->fillScreen ( BLACK ) ;       // Clear the screen
 #define dsp_getwidth()          160                                       // Adjust to your display
 #define dsp_getheight()         128                                       // Get height of screen

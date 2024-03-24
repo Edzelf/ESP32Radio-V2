@@ -12,12 +12,14 @@
 Adafruit_ST7735*     bluetft_tft ;                          // For instance of display driver
 scrseg_struct        bluetft_tftdata[TFTSECS] =             // Screen divided in 3 segments + 1 overlay
                       {                                     // One text line is 8 pixels
-                        { false, WHITE,   0,  8, "" },      // 1 top line
-                        { false, CYAN,   20, 64, "" },      // 8 lines in the middle
-                        { false, YELLOW, 90, 32, "" },      // 4 lines at the bottom
-                        { false, GREEN,  90, 32, "" }       // 4 lines at the bottom for rotary encoder
+                        { false, GREY,   1,   0, 12, 1*24, "" },                            // 1 top line - name & clock
+                        { false, CYAN,   2,  16, 38, 2*14, "" },                            // 2 big lines in the middle - artist
+                        { false, YELLOW, 2,  58, 38, 2*14, "" },                            // 2 big lines in the middle - song title
+                        { false, RED,    1, 100, 26, 3*24, "" },                            // 4 lines at the bottom minus volume bar - station name
+                        { false, GREEN,  1, 100, 26, 3*24, "" }                             // 4 lines at the bottom for rotary encoder
                       } ;
 
+uint8_t SelectedFont = 1;
 
 bool bluetft_dsp_begin ( int8_t cs, int8_t dc )
 {
@@ -132,6 +134,8 @@ void bluetft_displaytime ( const char* str, uint16_t color )
       if ( str[i] != oldstr[i] )                   // Difference?
       {
         dsp_fillRect ( pos, 0, 6, 8, BLACK ) ;     // Clear the space for new character
+        dsp_setTextSize ( tftdata[0].size ) ;                        // Selected text size
+        dsp_setTextColor ( tftdata[0].color ) ;                      // Set the requested color
         dsp_setCursor ( pos, 0 ) ;                 // Prepare to show the info
         dsp_print ( str[i] ) ;                     // Show the character
         oldstr[i] = str[i] ;                       // Remember for next compare
@@ -140,3 +144,37 @@ void bluetft_displaytime ( const char* str, uint16_t color )
     }
   }
 }
+
+
+
+
+//**************************************************************************************************
+
+void SetFont(uint8_t Size)
+{
+  if (Size == 1)
+  {
+    bluetft_tft->setFont(NULL);                                            // standard small font
+  }
+  else if (Size == 2)
+  {
+    bluetft_tft->setFont(&Font2Name);                                     // font for size 1
+  }
+  SelectedFont = Size;  // use in SetCursor function to adapt to difefrent font heights  
+}
+
+
+void SetCursor(int16_t x, int16_t y) 
+{
+  int16_t Yshift;
+  
+  if (SelectedFont == 1) // default built-in font
+    Yshift = 0;
+
+  else if (SelectedFont == 2) // bigger font, off center
+    Yshift = Font2YcursorShift;
+    
+  bluetft_tft->setCursor ( x, y + Yshift );
+}
+
+ 
