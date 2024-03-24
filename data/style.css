@@ -1,6 +1,7 @@
 body {
     background-color: lightblue;
     font-family: Arial, Helvetica, sans-serif;
+    font-size: 170%; /* 100% = 16 px */
  }
  
  h1 {
@@ -41,17 +42,49 @@ body {
     background-color: #111;
  }
  
- .button {
-    min-width: 80px;
-    height: 30px;
+ .bigbutton {
+    min-width: 180px;
+    height: 100px;
     background-color: #128F76;
     border: none;
     color: white;
     text-align: center;
     text-decoration: none;
     display: inline-block;
-    font-size: 16px;
-    margin: 4px 2px;
+    font-size: 40px;
+    margin: 12px 16px;
+    cursor: pointer;
+    border-radius: 10px;
+    white-space: nowrap;
+ }
+ 
+ .volumebutton {
+    min-width: 95px;
+    height: 70px;
+    background-color: #128F76;
+    border: none;
+    color: white;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 30px;
+    margin: 12px 10px;
+    cursor: pointer;
+    border-radius: 10px;
+    white-space: nowrap;
+ }
+ 
+ .button {
+    min-width: 125px;
+    height: 46px;
+    background-color: #128F76;
+    border: none;
+    color: white;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 24px;
+    margin: 8px 6px;
     cursor: pointer;
     border-radius: 10px;
     white-space: nowrap;
@@ -61,10 +94,10 @@ body {
  
  .select {
     width: 160px;
-    height: 32px;
+    height: 150%;
     padding: 5px;
     background: white;
-    font-size: 16px;
+    font-size: 110%;
     line-height: 1;
     border: 1;
     border-radius: 5px;
@@ -74,13 +107,32 @@ body {
     border-radius: 10px;
  }
  
- .selectw {width: 410px;}
+ .selectw {width: 410px; height: 150%; font-size: 150%;}
+ 
+ input[type="bigtext"] {
+    margin: 0px;
+    height: 180%;
+    background: white;
+    font-size: 150%;
+    appearance: none;
+    box-shadow: none;
+    border-radius: 5px;
+    -webkit-border-radius: 5px;
+    -moz-border-radius: 5px;
+    -webkit-appearance: none;
+    border: 1px solid black;
+    border-radius: 10px;
+ }
+ 
+ input[type="bigtext"]:focus {
+   outline: none;
+ }
  
  input[type="text"] {
     margin: 0;
-    height: 28px;
+/*    height: 150%; */
     background: white;
-    font-size: 16px;
+    font-size: 110%;
     appearance: none;
     box-shadow: none;
     border-radius: 5px;
@@ -104,7 +156,7 @@ body {
    text-align: center;
    text-decoration: none;
    display: inline-block;
-   font-size: 16px;
+   font-size: 24px;
    margin: 4px 2px;
    cursor: pointer;
    border-radius: 5px;
@@ -120,7 +172,7 @@ body {
  }
  
  table.table2 td {
-  background-color: #128F76;
+  background-color: #ffff99;
   border: 1px solid black;
  }
  

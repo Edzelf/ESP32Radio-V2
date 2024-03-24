@@ -10,6 +10,7 @@
   <ul>
    <li><a class="pull-left" href="/index.html">Control</a></li>
    <li><a class="pull-left" href="/search.html">Search</a></li>
+   <li><a class="pull-left" href="/mp3play.html">MP3-player</a></li>
    <li><a class="pull-left active" href="/config.html">Config</a></li>
    <li><a class="pull-left" href="/mp3play.html">MP3-player</a></li>
    <li><a class="pull-left" href="/about.html">About</a></li>
@@ -26,13 +27,13 @@
    <button class="button buttonr" onclick="httpGet('reset')">Restart</button>
    &nbsp;&nbsp;
    <button class="button" onclick="ldef('getdefs')">Default</button>
-    <br><input type="text" size="80" id="resultstr" placeholder="Waiting for input....">
+    <br><input type="text" size="50" id="resultstr" placeholder="Waiting for input....">
     <br>
   </center>
     <script>
       function httpGet ( theReq )
       {
-        var theUrl = "/" + theReq + "?version=" + Math.random() ;
+        var theUrl = "/?" + theReq + "&version=" + Math.random() ;
         var xhr = new XMLHttpRequest() ;
         xhr.onreadystatechange = function() {
           if ( xhr.readyState == XMLHttpRequest.DONE )

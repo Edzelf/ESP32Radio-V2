@@ -9,24 +9,39 @@
  <body>
   <ul>
    <li><a class="pull-left active" href="/index.html">Control</a></li>
-   <li><a class="pull-left" href="/config.html">Config</a></li>
    <li><a class="pull-left" href="/search.html">Search</a></li>
    <li><a class="pull-left" href="/mp3play.html">MP3-player</a></li>
+   <li><a class="pull-left" href="/config.html">Config</a></li>
    <li><a class="pull-left" href="/about.html">About</a></li>
   </ul>
   <br><br><br>
   <center>
    <h1>** ESP32 Radio **</h1>
-   <button class="button" onclick="httpGet('downpreset=1')">PREV</button>
-   <button class="button" onclick="httpGet('uppreset=1')">NEXT</button>
-   <button class="button" id="volmin" onclick="httpGet('downvolume=2')">VOL-</button>
-   <button class="button" id="volplus" onclick="httpGet('upvolume=2')">VOL+</button>
-   <button class="button" onclick="httpGet('status')">STATUS</button>
-   <button class="button" onclick="httpGet('test')">TEST</button>
+   <button class="bigbutton" onclick="httpGet('downpreset=1')">PREV</button>
+   <button class="bigbutton" onclick="httpGet('uppreset=1')">NEXT</button>
+   <button class="bigbutton" id="volmin" onclick="httpGet('downvolume=2')">VOL-</button>
+   <button class="bigbutton" id="volplus" onclick="httpGet('upvolume=2')">VOL+</button>
    <br>
-   <button class="button" onclick="httpGet('mute')">MUTE</button>
-   <button class="button" onclick="httpGet('unmute')">UNMUTE</button>
-   <button class="button" onclick="httpGet('sleep')">SLEEP</button>
+   <br>
+   <button class="volumebutton" id="vol" onclick="httpGet('volume=30')">30</button>
+   <button class="volumebutton" id="vol" onclick="httpGet('volume=50')">50</button>
+   <button class="volumebutton" id="vol" onclick="httpGet('volume=60')">60</button>
+   <button class="volumebutton" id="vol" onclick="httpGet('volume=70')">70</button>
+   <button class="volumebutton" id="vol" onclick="httpGet('volume=80')">80</button>
+   <button class="volumebutton" id="vol" onclick="httpGet('volume=90')">90</button>
+   <button class="volumebutton" id="vol" onclick="httpGet('volume=100')">100</button>
+   <br>
+   <br>
+   <button class="bigbutton" onclick="httpGet('mute')">MUTE</button>
+   <button class="bigbutton" onclick="httpGet('status')">STATUS</button>
+   <button class="bigbutton" onclick="httpGet('test')">TEST</button>
+   
+   <br>
+   <br>
+   <br>
+   <input type="bigtext" size="35" id="resultstr" placeholder="Waiting for a command....">
+   <br>
+   
    <table id="t1" style="width:500px">
     <tr>
      <td colspan="2"><center>
@@ -66,21 +81,21 @@
       <label for="HF"><big>Treble Freq:</big></label>
       <br>
       <select class="select" onChange="handletone(this)" id="tonehf">
-       <option value="1">1 kHz</option>
-       <option value="2">2 kHz</option>
-       <option value="3">3 kHz</option>
-       <option value="4">4 kHz</option>
-       <option value="5">5 kHz</option>
-       <option value="6">6 kHz</option>
-       <option value="7">7 kHz</option>
-       <option value="8">8 kHz</option>
-       <option value="9">9 kHz</option>
-       <option value="10">10 kHz</option>
-       <option value="11">11 kHz</option>
-       <option value="12">12 kHz</option>
-       <option value="13">13 kHz</option>
-       <option value="14">14 kHz</option>
-       <option value="15">15 kHz</option>
+        <option value="1">1 kHz</option>
+        <option value="2">2 kHz</option>
+        <option value="3">3 kHz</option>
+        <option value="4">4 kHz</option>
+        <option value="5">5 kHz</option>
+        <option value="6">6 kHz</option>
+        <option value="7">7 kHz</option>
+        <option value="8">8 kHz</option>
+        <option value="9">9 kHz</option>
+        <option value="10">10 kHz</option>
+        <option value="11">11 kHz</option>
+        <option value="12">12 kHz</option>
+        <option value="13">13 kHz</option>
+        <option value="14">14 kHz</option>
+        <option value="15">15 kHz</option>
       </select>
       <br><br> 
      </center></td>
@@ -130,30 +145,38 @@
        <option value="15">140 Hz</option>
       </select> 
      </center></td>
-     <br><br>
     </tr>
    </table>
    <br>
-   <input type="text" size="60" id="station" placeholder="Enter a station/file here....">
+   <br>
+   Find new radio stations at <a target="blank" href="http://www.internet-radio.com">http://www.internet-radio.com</a><br>
+      or use the Search function from the menu.
+   <br>
+   <input type="text" size="40" id="station" placeholder="Enter a station/file here....">
    <button class="button" onclick="setstat()">PLAY</button>
    <br>
+   
    <br>
-   <input type="text" width="600px" size="72" id="resultstr" placeholder="Waiting for a command...."><br>
-   <br><br>
-   <p>Find new radio stations at <a target="blank" href="http://www.internet-radio.com">http://www.internet-radio.com</a><br>
-      or use the Search function from the menu.</p>
-   <br><br>
+   <input type="text" size="50" id="statustext" placeholder="Status...">
+   
   </center>
   <script>
-    function httpGet ( theReq )
+   function httpGet ( theReq )
    {
     var theUrl = "/?" + theReq + "&version=" + Math.random() ;
     var xhr = new XMLHttpRequest() ;
     xhr.onreadystatechange = function() {
       if ( xhr.readyState == XMLHttpRequest.DONE )
       {
-        resultstr.value = xhr.responseText ;
-        preset.selectedIndex = 0 ;
+        if ( theReq == "test" ) 
+        {
+          statustext.value = xhr.responseText ;
+        }
+        else 
+        {        
+          resultstr.value = xhr.responseText ;
+          preset.selectedIndex = 0 ;
+        }
       }
     }
     xhr.open ( "GET", theUrl ) ;
@@ -211,10 +234,12 @@
    function myRefresh()
    {
     httpGet ('status') ;
+    httpGet ('test') ;
     setTimeout(myRefresh,5000) ;
    }
 
    // Fill preset list initially
+   //
    function onloadfunc()
    {
      var i, sel, opt, lines, parts ;
@@ -226,30 +251,30 @@
          lines = xhr.responseText.split ( "\n" ) ;
          for ( i = 0 ; i < ( lines.length-1 ) ; i++ )
          {
-          sel = document.getElementById ( "preset" ) ;
-          parts = lines[i].split ( "=" ) ;
-          if ( parts[0].indexOf ( "preset_" ) == 0 )
-          {
-           opt = document.createElement ( "OPTION" ) ;
-           opt.value = parts[0].substring ( 7 ) ;
-           opt.text = parts[1] ;
-           sel.add( opt ) ;
-          }
-          if ( ( parts[0].indexOf ( "tone" ) == 0 ) ||
-               ( parts[0] == "preset" ) )
-          {
-           selectItemByValue ( parts[0], parts[1] ) ;
-          }
-          // No tone settings if no VS1053 decoder 
-          if ( parts[0].indexOf ( "decoder" ) == 0 )
-          {
-           if ( parts[1].indexOf ( "helix" ) == 0 )
+           sel = document.getElementById ( "preset" ) ;
+           parts = lines[i].split ( "=" ) ;
+           if ( parts[0].indexOf ( "preset_" ) == 0 )
            {
-           var toneobj = document.getElementById("t1") ;
-            toneobj.deleteRow(2);
-            toneobj.deleteRow(1);
+             opt = document.createElement ( "OPTION" ) ;
+             opt.value = parts[0].substring ( 7 ) ;
+             opt.text = parts[1] ;
+             sel.add( opt ) ;
            }
-          }
+           if ( ( parts[0].indexOf ( "tone" ) == 0 ) ||
+                ( parts[0] == "preset" ) )
+           {
+             selectItemByValue ( parts[0], parts[1] ) ;
+           }
+           // No tone settings if no VS1053 decoder 
+           if ( parts[0].indexOf ( "decoder" ) == 0 )
+           {
+             if ( parts[1].indexOf ( "helix" ) == 0 )
+             {
+              var toneobj = document.getElementById("t1") ;
+              toneobj.deleteRow(2);
+              toneobj.deleteRow(1);
+             }
+           }
          }
          setTimeout(myRefresh,5000) ;
        }
