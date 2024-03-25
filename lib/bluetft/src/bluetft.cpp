@@ -30,8 +30,8 @@ bool bluetft_dsp_begin ( int8_t cs, int8_t dc )
   if ( ( bluetft_tft = new Adafruit_ST7735 ( cs, dc , -1 ) ) )      // Create an instant for TFT
   {
     // Uncomment one of the following initR lines for ST7735R displays
-    //tft->initR ( INITR_GREENTAB ) ;                               // Init TFT interface
-    //tft->initR ( INITR_REDTAB ) ;                                 // Init TFT interface
+    //bluetft_tft->initR ( INITR_GREENTAB ) ;                               // Init TFT interface
+    //bluetft_tft->initR ( INITR_REDTAB ) ;                                 // Init TFT interface
     bluetft_tft->initR ( INITR_BLACKTAB ) ;                         // Init TFT interface
     //tft->initR ( INITR_144GREENTAB ) ;                            // Init TFT interface
     //tft->initR ( INITR_MINI160x80 ) ;                             // Init TFT interface

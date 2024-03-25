@@ -1301,7 +1301,7 @@ void stop_mp3client ()
   while ( mp3client && mp3client->connected() )    // Client active and connected?
   {
     ESP_LOGI ( TAG, "Stopping client" ) ;          // Yes, stop connection to host
-    //mp3client->close() ;                         // Causes memory leak!
+    mp3client->close() ;                           // Causes memory leak!
     mp3client->abort() ;                           // This works better
     vTaskDelay ( 500 / portTICK_PERIOD_MS ) ;
   }
@@ -1333,6 +1333,7 @@ bool connecttohost()
   tftset ( 0, NAME ) ;                               // Set screen segment text top line
   tftset ( 1, "" ) ;                                 // Clear artist
   tftset ( 2, "" ) ;                                 // Clear song 
+  tftset ( 3, "" ) ;                                 // Clear station
   displaytime ( "" ) ;                               // Clear time on TFT screen
   setdatamode ( INIT ) ;                             // Start default in INIT mode
   chunked = false ;                                  // Assume not chunked
@@ -4087,9 +4088,16 @@ const char* analyzeCmd ( const char* par, const char* val )
   }
   else if ( argument == "stop" )                       // Stop request?
   {
-    myQueueSend ( sdqueue, &stopcmd ) ;                // Stop player
-    myQueueSend ( radioqueue, &stopcmd ) ;             // Stop player
-    //stop_mp3client()
+    myQueueSend ( sdqueue, &stopcmd ) ;                // Stop player SD card
+    myQueueSend ( radioqueue, &stopcmd ) ;             // Stop player web radio
+    //also clear display
+    tftset ( 1, "" ) ;                                 // Clear artist
+    tftset ( 2, "  STOP" ) ;                           // Clear song 
+    tftset ( 3, "" ) ;                                 // Clear station
+  }
+  else if ( argument == "start" )                     // Start request?
+  {
+    myQueueSend ( radioqueue, &startcmd  ) ;          // Restart radio player
   }
   else if ( argument == "sleep" )                     // Sleep request?
   {
@@ -4113,8 +4121,8 @@ const char* analyzeCmd ( const char* par, const char* val )
   }
   else if ( argument == "test" )                      // Test command
   {
-    sprintf ( reply, "Free memory is %d/%d, "         // Get some info to display
-              "chunks in queue %d, bitrate %d kbps\n",
+    sprintf ( reply, "Free memory %d/%d, "           // Get some info to display
+              "queue %d, bitrate %d kbps\n",
               heapspace,
               ESP.getFreeHeap(),
               uxQueueMessagesWaiting ( dataqueue ),
@@ -4238,7 +4246,7 @@ void displayinfo ( uint16_t inx )
     if ( ( dsp_getheight() > 64 ) && ( p->y > 1 ) )        // Need and space for divider?
     {
       dsp_fillRect ( 0, p->y - 4, width, 4, BLACK ) ;      // Clear the space for divider
-      dsp_fillRect ( 0, p->y - 4, width, 1, GREEN ) ;      // Yes, show divider above text
+      dsp_fillRect ( 0, p->y - 4, width, 1, BLUE ) ;      // Yes, show divider above text
     }
     len = p->str.length() ;                                // Required length of buffer
     if ( len > p->str_max_len )

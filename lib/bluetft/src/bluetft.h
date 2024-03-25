@@ -60,16 +60,16 @@ void SetFont(uint8_t Size);
 void SetCursor(int16_t x, int16_t y);
 
 // Various macro's to mimic the ST7735 version of display functions
-#define dsp_setRotation()       bluetft_tft->setRotation ( 1 )            // Use landscape format (3 for upside down)
+#define dsp_setRotation()       bluetft_tft->setRotation ( 3 )            // Use landscape format (3 for upside down)
 #define dsp_print(a)            bluetft_tft->print ( a )                  // Print a string 
 #define dsp_println(b)          bluetft_tft->println ( b )                // Print a string followed by newline 
-#define dsp_fillRect(a,b,c,d,e) bluetft_tft->fillRect ( a, b, c, d, e ) ; // Fill a rectange
+#define dsp_fillRect(a,b,c,d,e) bluetft_tft->fillRect ( a, b, c, d, e )   // Fill a rectange
 #define dsp_setTextSize(a)      SetFont(a)               // Set the text size
 #define dsp_setTextColor(a)     bluetft_tft->setTextColor(a)              // Set the text color
 #define dsp_setCursor(a,b)      SetCursor( a, b )           // Position the cursor
-#define dsp_erase()             bluetft_tft->fillScreen ( BLACK ) ;       // Clear the screen
-#define dsp_getwidth()          160                                       // Adjust to your display
-#define dsp_getheight()         128                                       // Get height of screen
+#define dsp_erase()             bluetft_tft->fillScreen ( BLACK )         // Clear the screen
+#define dsp_getwidth()          bluetft_tft->width()                      // Adjust to your display
+#define dsp_getheight()         bluetft_tft->height()                     // Get height of screen
 #define dsp_update(a)                                                     // Updates to the physical screen
 #define dsp_begin               bluetft_dsp_begin                         // Init driver
 

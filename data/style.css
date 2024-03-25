@@ -103,6 +103,7 @@ body {
     border-radius: 5px;
     -webkit-border-radius: 5px;
     -webkit-appearance: none;
+    appearance: none;
     border: 1px solid black;
     border-radius: 10px;
  }
