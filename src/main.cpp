@@ -109,7 +109,7 @@
 
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Fri, 05 Jul 2024 13:30:00 GMT"
+#define VERSION     "Fri, 05 Jul 2024 13:40:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "soc/soc.h"                                      // For brown-out detector setting
@@ -4414,8 +4414,8 @@ void playtask ( void * parameter )
     #endif
     pin_config.data_in_num    = I2S_PIN_NO_CHANGE ;
     #ifdef DEC_HELIX_SPDIF
-      pin_config.bck_io_num   = 21 ; //TEST*TEST*TEST I2S_PIN_NO_CHANGE ;
-      pin_config.ws_io_num    = 22 ;      // TEST*TEST*TEST I2S_PIN_NO_CHANGE ;
+      pin_config.bck_io_num   = I2S_PIN_NO_CHANGE ;
+      pin_config.ws_io_num    = I2S_PIN_NO_CHANGE ;
       pin_config.data_out_num = ini_block.i2s_spdif_pin ;
       pin_config.data_in_num  = I2S_PIN_NO_CHANGE ;
       ESP_LOGI ( TAG, "Output to SPDIF, pin %d",                    // Show pin used for output device
