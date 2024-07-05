@@ -105,10 +105,11 @@
 // 16-01-2024, ES: Disable brownout.
 // 16-02-2024, ES: SPDIFF output (experimental).
 // 19-02-2024, ES: Fixed mono stream, correct handling of reset command.
+// 27-06-2024, ES: Simplified WiFi network set.
 
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Wed, 06 Mar 2024 16:00:00 GMT"
+#define VERSION     "Fri, 05 Jul 2024 13:30:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "soc/soc.h"                                      // For brown-out detector setting
@@ -373,8 +374,6 @@ int                  ir_intcount = 0 ;                   // For test IR interrup
 bool                 spftrigger = false ;                // To trigger execution of special functions
 const char*          fixedwifi = "" ;                    // Used for FIXEDWIFI option
 File                 SPIFFSfile ;                        /// File handle for SPIFFS file
-
-std::vector<WifiInfo_t> wifilist ;                       // List with wifi_xx info
 
 // nvs stuff
 const esp_partition_t*  nvs ;                                     // Pointer to partition struct
@@ -1527,26 +1526,16 @@ bool connectwifi()
   vTaskDelay ( 1000 / portTICK_PERIOD_MS ) ;            // Silly things to start connection
   WiFi.mode ( WIFI_STA ) ;
   vTaskDelay ( 1000 / portTICK_PERIOD_MS ) ;
-  if ( wifilist.size()  )                               // Any AP defined?
+  if ( wifiMulti.run() == WL_NO_SSID_AVAIL )            // Connect to best network
   {
-    if ( wifilist.size() == 1 )                         // Just one AP defined in preferences?
-    {
-      winfo = wifilist[0] ;                             // Get this entry
-      ESP_LOGI ( TAG, "Try WiFi \"%s\"", winfo.ssid ) ; // Message to show during WiFi connect
-      WiFi.begin ( winfo.ssid, winfo.passphrase ) ;     // Connect to single SSID found in wifi_xx
-    }
-    else                                                // More AP to try
-    {
-      wifiMulti.run() ;                                 // Connect to best network
-    }
-    if (  WiFi.waitForConnectResult() != WL_CONNECTED ) // Try to connect
-    {
-      localAP = true ;                                  // Error, setup own AP
-    }
+    localAP = true ;
   }
   else
   {
-    localAP = true ;                                    // Not even a single AP defined
+    if ( WiFi.waitForConnectResult() != WL_CONNECTED )  // Try to connect
+    {
+      localAP = true ;                                  // Error, setup own AP
+    }
   }
   if ( localAP )                                        // Must setup local AP?
   {
@@ -2201,12 +2190,9 @@ void scanIR()
 //**************************************************************************************************
 //                                           M K _ L S A N                                         *
 //**************************************************************************************************
-// Make al list of acceptable networks in preferences.                                             *
+// Make al list of all WiFi networks in preferences and FIXEDWIFI.                                 *
 // Will be called only once by setup().                                                            *
-// The result will be stored in wifilist.                                                          *
-// Not that the last found SSID and password are kept in common data.  If only one SSID is         *
-// defined, the connect is made without using wifiMulti.  In this case a connection will           *
-// be made even if de SSID is hidden.                                                              *
+// The networks will be added to wifiMulti.                                                        *
 //**************************************************************************************************
 void  mk_lsan()
 {
@@ -2241,11 +2227,8 @@ void  mk_lsan()
     {
       lpw = buf.substring ( inx + 1 ) ;                  // Isolate password
       lssid = buf.substring ( 0, inx ) ;                 // Holds SSID now
-      winfo.ssid = (char*)lssid.c_str() ;                       // Set ssid of new element for wifilist
-      winfo.passphrase = (char*)lpw.c_str() ;
-      wifilist.push_back ( winfo ) ;                     // Add to list
-      wifiMulti.addAP ( winfo.ssid,                      // Add to wifi acceptable network list
-                        winfo.passphrase ) ;
+      wifiMulti.addAP ( lssid.c_str(),                   // Add to wifi acceptable network list
+                        lpw.c_str() ) ;
     }
   }
 }
@@ -4387,7 +4370,7 @@ void playtask ( void * parameter )
     i2s_config.dma_buf_count        = 8 ;
     i2s_config.dma_buf_len          = 256 ;
   #endif
-  i2s_config.channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT ;   // (0)
+  //i2s_config.channel_format     = I2S_CHANNEL_FMT_RIGHT_LEFT ;   // = 0
   i2s_config.intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1 ;         // High interrupt priority
   i2s_config.dma_buf_count        = 12 ;
   i2s_config.dma_buf_len          = 256 ;
@@ -4431,8 +4414,8 @@ void playtask ( void * parameter )
     #endif
     pin_config.data_in_num    = I2S_PIN_NO_CHANGE ;
     #ifdef DEC_HELIX_SPDIF
-      pin_config.bck_io_num   = I2S_PIN_NO_CHANGE ;
-      pin_config.ws_io_num    = I2S_PIN_NO_CHANGE ;
+      pin_config.bck_io_num   = 21 ; //TEST*TEST*TEST I2S_PIN_NO_CHANGE ;
+      pin_config.ws_io_num    = 22 ;      // TEST*TEST*TEST I2S_PIN_NO_CHANGE ;
       pin_config.data_out_num = ini_block.i2s_spdif_pin ;
       pin_config.data_in_num  = I2S_PIN_NO_CHANGE ;
       ESP_LOGI ( TAG, "Output to SPDIF, pin %d",                    // Show pin used for output device
@@ -4583,4 +4566,3 @@ void sdfuncs()
   }
 #endif
 }
-
