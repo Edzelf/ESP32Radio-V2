@@ -4,6 +4,7 @@
  *
  *  Created on: 26.10.2018
  *  Updated on: 10.09.2021
+ *  Updated on: 09-07-2024, ES: fixed Arduino IDE compiation error.
  ************************************************************************************/
 
 #include "aac_decoder.h"
@@ -5294,7 +5295,7 @@ void GenerateNoiseVector(int *coef, int *last, int nVals)
     int i;
 
     for (i = 0; i < nVals; i++)
-        coef[i] = ((int32_t)Get32BitVal((uint32_t *)last)) >> 16;
+        coef[i] = ((int32_t)Get32BitVal((unsigned int*)last)) >> 16;
 }
 
 /***********************************************************************************************************************
