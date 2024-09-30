@@ -3078,7 +3078,7 @@ void handleVolPub()
 //**************************************************************************************************
 // Fully redraws entire display (0) or some part: top (1) middle (2) bottom (3)                    *
 //**************************************************************************************************
-void redrawdisplay(int8_t i)
+void redrawdisplay ( int8_t i )
 {
   disp_data = true ;
   if (i == 0 || i == 1)
@@ -3092,7 +3092,7 @@ void redrawdisplay(int8_t i)
   }
   if (i == 0 || i == 2)
   {
-      if ( showstreamtitle ( ("StreamTitle=" + icystreamtitle).c_str() ) ) { } // Stream Title
+      if ( showstreamtitle ( ( "StreamTitle=" + icystreamtitle ).c_str() ) ) { } // Stream Title
   }
   if (i == 0 || i == 3)
   {
@@ -3120,7 +3120,7 @@ void chk_enc()
       enc_inactivity = 0 ;
       enc_menu_mode = VOLUME ;                                // Return to VOLUME mode
       ESP_LOGI ( TAG, "Encoder mode back to VOLUME" ) ;
-      redrawdisplay(3) ;
+      redrawdisplay ( 3 ) ;
     }
   }
   if ( singleclick || doubleclick ||                          // Any activity?
@@ -3134,7 +3134,7 @@ void chk_enc()
       {
         singleclick = false ;                                 // otherwise only wakes up the screen instead of muting
       }
-      redrawdisplay(0) ;
+      redrawdisplay ( 0 ) ;
     }
   }
   else
@@ -4062,8 +4062,8 @@ const char* analyzeCmd ( const char* str )
 //   reset                                  // Restart the ESP32                                   *
 //   bat0       = 2318                      // ADC value for an empty battery                      *
 //   bat100     = 2916                      // ADC value for a fully charged battery               *
-//   disp_time = 45                         // Turns off backlight / blanks display in x seconds *)*
-//   disp_blank = false                     // Allows blanking of display *)                       *
+//   disp_time = 45                         // Turns off backlight / blanks display in x seconds   *
+//   disp_blank = false                     // Allows blanking of display                          *
 //  Commands marked with "*)" are sensible during initialization only                              *
 //**************************************************************************************************
 const char* analyzeCmd ( const char* par, const char* val )
@@ -4294,7 +4294,7 @@ const char* analyzeCmd ( const char* par, const char* val )
     if ( argument.indexOf ( "time" ) > 0 )            // Time to turn off backlight or blank?
     {
       ini_block.disp_time = ivalue ;                  // Yes, set time
-      if ( ini_block.disp_time <= 2 )                 // 2 seconds or less is silly
+      if ( ini_block.disp_time <= 5 )                 // 5 seconds or less is silly
       {
         ini_block.disp_time = BL_TIME ;
       }
@@ -4307,7 +4307,6 @@ const char* analyzeCmd ( const char* par, const char* val )
       }
     }
   }
-
   else
   {
     sprintf ( reply, "%s called with illegal parameter: %s",
