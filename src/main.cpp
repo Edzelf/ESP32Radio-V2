@@ -4063,7 +4063,7 @@ const char* analyzeCmd ( const char* str )
 //   bat0       = 2318                      // ADC value for an empty battery                      *
 //   bat100     = 2916                      // ADC value for a fully charged battery               *
 //   disp_time = 45                         // Turns off backlight / blanks display in x seconds   *
-//   disp_blank = false                     // Allows blanking of display                          *
+//   disp_blank = false                     // Allows blanking of display *)                       *
 //  Commands marked with "*)" are sensible during initialization only                              *
 //**************************************************************************************************
 const char* analyzeCmd ( const char* par, const char* val )
