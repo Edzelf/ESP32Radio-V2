@@ -108,8 +108,11 @@
 // 27-06-2024, ES: Simplified WiFi network set.
 // 30-09-2024, Trip5: OLED 64x128 improvements: blank screen with backlight time (both available in prefs),
 //             character limit for small displays.  Also: OTA beautified, fixed rotary timeout display, new esp-idf ADC.
+// 30-09-2024, Trip5: OLED 64x128 improvements: blank screen with backlight time (both available in prefs),
+//             character limit for small displays.  Also: OTA beautified, fixed rotary timeout display, new esp-idf ADC.
 //
 // Define the version number, the format used is the HTTP standard.
+#define VERSION     "Mon, 29 Sep 2024 22:00:00 GMT"
 #define VERSION     "Mon, 29 Sep 2024 22:00:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
