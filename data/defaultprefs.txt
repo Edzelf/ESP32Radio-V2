@@ -43,6 +43,9 @@ preset_09 = server-27.stream-server.nl:8192/stream   #  9 - 192 Radio Nederland,
 clk_server = pool.ntp.org                            # Time server to be used
 clk_offset = 1                                       # Offset with respect to UTC in hours
 clk_dst = 1                                          # Offset during daylight saving time (hours)
+# Screensaving Options
+disp_time = 45                                       # Turn off backlight / blank display (seconds)
+disp_blank = true                                    # Enables blanking the display
 # Some example IR codes
 ir_40BF = upvolume = 2
 ir_C03F = downvolume = 2
