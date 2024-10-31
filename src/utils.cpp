@@ -155,6 +155,11 @@ String utf8ascii ( const char* s )
 //**************************************************************************************************
 bool pin_exists ( uint8_t pin )
 {
-  return ( pin <= 39 ) ;
+  #ifdef CONFIG_IDF_TARGET_ESP32
+    return ( pin <= 39 ) ;
+  #endif
+  #ifdef CONFIG_IDF_TARGET_ESP32S3
+    return ( pin <= 48 ) ;
+  #endif
 }
 

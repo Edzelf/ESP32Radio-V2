@@ -108,9 +108,10 @@
 // 27-06-2024, ES: Simplified WiFi network set.
 // 30-09-2024, Trip5: OLED 64x128 improvements: blank screen with backlight time (both available in prefs),
 //             character limit for small displays.  Also: OTA beautified, fixed rotary timeout display, new esp-idf ADC.
+// 17-10-2024, ES: Support for ESP32-S3.
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Mon, 29 Sep 2024 22:00:00 GMT"
+#define VERSION     "Thu, 17 Oct 2024 10:10:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "soc/soc.h"                                      // For brown-out detector setting
@@ -407,48 +408,92 @@ struct progpin_struct                                    // For programmable inp
   bool           cur ;                                   // Current state, true = HIGH, false = LOW
 } ;
 
-progpin_struct   progpin[] =                             // Input pins and programmed function
-{
-  {  0, false, false,  "", false },
-  //{  1, true,  false,  "", false },                    // Reserved for TX Serial output
-  {  2, false, false,  "", false },
-  //{  3, true,  false,  "", false },                    // Reserved for RX Serial input
-  {  4, false, false,  "", false },
-  {  5, false, false,  "", false },
-  //{  6, true,  false,  "", false },                    // Reserved for FLASH SCK
-  //{  7, true,  false,  "", false },                    // Reserved for FLASH D0
-  //{  8, true,  false,  "", false },                    // Reserved for FLASH D1
-  //{  9, true,  false,  "", false },                    // Reserved for FLASH D2
-  //{ 10, true,  false,  "", false },                    // Reserved for FLASH D3
-  //{ 11, true,  false,  "", false },                    // Reserved for FLASH CMD
-  { 12, false, false,  "", false },
-  { 13, false, false,  "", false },
-  { 14, false, false,  "", false },
-  { 15, false, false,  "", false },
-  { 16, false, false,  "", false },                      // May be UART 2 RX for Nextion
-  { 17, false, false,  "", false },                      // May be UART 2 TX for Nextion
-  { 18, false, false,  "", false },                      // Default for SPI CLK
-  { 19, false, false,  "", false },                      // Default for SPI MISO
-  //{ 20, true,  false,  "", false },                    // Not exposed on DEV board
-  { 21, false, false,  "", false },                      // Also Wire SDA
-  { 22, false, false,  "", false },                      // Also Wire SCL
-  { 23, false, false,  "", false },                      // Default for SPI MOSI
-  //{ 24, true,  false,  "", false },                    // Not exposed on DEV board
-  { 25, false, false,  "", false },                      // DAC output / I2S output
-  { 26, false, false,  "", false },                      // DAC output / I2S output
-  { 27, false, false,  "", false },                      // I2S output
-  //{ 28, true,  false,  "", false },                    // Not exposed on DEV board
-  //{ 29, true,  false,  "", false },                    // Not exposed on DEV board
-  //{ 30, true,  false,  "", false },                    // Not exposed on DEV board
-  //{ 31, true,  false,  "", false },                    // Not exposed on DEV board
-  { 32, false, false,  "", false },
-  { 33, false, false,  "", false },
-  { 34, false, false,  "", false },                      // Note, no internal pull-up
-  { 35, false, false,  "", false },                      // Note, no internal pull-up
-  //{ 36, true,  false,  "", false },                    // Reserved for ADC battery level
-  { 39, false,  false,  "", false },                     // Note, no internal pull-up
-  { -1, false, false,  "", false }                       // End of list
-} ;
+#ifdef CONFIG_IDF_TARGET_ESP32
+  progpin_struct   progpin[] =                             // Input pins and programmed function
+  {
+    {  0, false, false,  "", false },
+    //{  1, true,  false,  "", false },                    // Reserved for TX Serial output
+    {  2, false, false,  "", false },
+    //{  3, true,  false,  "", false },                    // Reserved for RX Serial input
+    {  4, false, false,  "", false },
+    {  5, false, false,  "", false },
+    //{  6, true,  false,  "", false },                    // Reserved for FLASH SCK
+    //{  7, true,  false,  "", false },                    // Reserved for FLASH D0
+    //{  8, true,  false,  "", false },                    // Reserved for FLASH D1
+    //{  9, true,  false,  "", false },                    // Reserved for FLASH D2
+    //{ 10, true,  false,  "", false },                    // Reserved for FLASH D3
+    //{ 11, true,  false,  "", false },                    // Reserved for FLASH CMD
+    { 12, false, false,  "", false },
+    { 13, false, false,  "", false },
+    { 14, false, false,  "", false },
+    { 15, false, false,  "", false },
+    { 16, false, false,  "", false },                      // May be UART 2 RX for Nextion
+    { 17, false, false,  "", false },                      // May be UART 2 TX for Nextion
+    { 18, false, false,  "", false },                      // Default for SPI CLK
+    { 19, false, false,  "", false },                      // Default for SPI MISO
+    //{ 20, true,  false,  "", false },                    // Not exposed on DEV board
+    { 21, false, false,  "", false },                      // Also Wire SDA
+    { 22, false, false,  "", false },                      // Also Wire SCL
+    { 23, false, false,  "", false },                      // Default for SPI MOSI
+    //{ 24, true,  false,  "", false },                    // Not exposed on DEV board
+    { 25, false, false,  "", false },                      // DAC output / I2S output
+    { 26, false, false,  "", false },                      // DAC output / I2S output
+    { 27, false, false,  "", false },                      // I2S output
+    //{ 28, true,  false,  "", false },                    // Not exposed on DEV board
+    //{ 29, true,  false,  "", false },                    // Not exposed on DEV board
+    //{ 30, true,  false,  "", false },                    // Not exposed on DEV board
+    //{ 31, true,  false,  "", false },                    // Not exposed on DEV board
+    { 32, false, false,  "", false },
+    { 33, false, false,  "", false },
+    { 34, false, false,  "", false },                      // Note, no internal pull-up
+    { 35, false, false,  "", false },                      // Note, no internal pull-up
+    //{ 36, true,  false,  "", false },                    // Reserved for ADC battery level
+    { 39, false,  false,  "", false },                     // Note, no internal pull-up
+    { -1, false, false,  "", false }                       // End of list
+  } ;
+#endif
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+  progpin_struct   progpin[] =                             // Input pins and programmed function
+  {
+    {  0, false, false,  "", false },                      // Also boot
+    //{  1, true,  false,  "", false },                    // Reserved for ADC battery level
+    {  2, false, false,  "", false },
+    {  3, true,  false,  "", false },
+    {  4, false, false,  "", false },
+    {  5, false, false,  "", false },
+    {  6, true,  false,  "", false },
+    {  7, true,  false,  "", false },
+    {  8, true,  false,  "", false },
+    {  9, true,  false,  "", false },
+    { 10, true,  false,  "", false },
+    { 11, true,  false,  "", false },
+    { 12, false, false,  "", false },
+    { 13, false, false,  "", false },
+    { 14, false, false,  "", false },
+    { 15, false, false,  "", false },
+    { 16, false, false,  "", false },                      // May be UART 2 RX for Nextion
+    { 17, false, false,  "", false },                      // May be UART 2 TX for Nextion
+    { 18, false, false,  "", false },                      // Default for SPI CLK
+    //{ 19, false, false,  "", false },                    // Reserved USB D-
+    //{ 20, true,  false,  "", false },                    // Reserved USB D+
+    { 21, false, false,  "", false },                      // Also Wire SDA
+    //{ 35, false, false,  "", false },                    // Reserved PSRAM
+    //{ 36, true,  false,  "", false },                    // Reserved PSRAM
+    //{ 37, true,  false,  "", false },                    // Reserved PSRAM
+    { 38, false,  false,  "", false },
+    { 39, false,  false,  "", false },
+    { 40, false,  false,  "", false },
+    { 41, false,  false,  "", false },
+    { 42, false,  false,  "", false },
+    //{ 43, false,  false,  "", false },                   // Reserved USB/Serial U0TXD
+    //{ 44, false,  false,  "", false },                   // Reserved USB/Serial U0RXD
+    //{ 45, false,  false,  "", false },                   // Reserved SPI Flash voltage
+    //{ 46, false,  false,  "", false },                   // Reserved Boot mode
+    { 47, false,  false,  "", false },
+    { 48, false,  false,  "", false },
+    { -1, false, false,  "", false }                       // End of list
+  } ;
+#endif
 
 struct touchpin_struct                                   // For programmable input pins
 {
@@ -460,14 +505,15 @@ struct touchpin_struct                                   // For programmable inp
   bool           cur ;                                   // Current state, true = HIGH, false = LOW
   int16_t        count ;                                 // Counter number of times low level
 } ;
+#ifdef CONFIG_IDF_TARGET_ESP32
 touchpin_struct   touchpin[] =                           // Touch pins and programmed function
 {
   {   4, false, false, "", false, 0 },                   // TOUCH0
   {   0, true,  false, "", false, 0 },                   // TOUCH1, reserved for BOOT button
   {   2, false, false, "", false, 0 },                   // TOUCH2
   {  15, false, false, "", false, 0 },                   // TOUCH3
-  {  13, false, false, "", false, 0 },                   // TOUCH4
-  {  12, false, false, "", false, 0 },                   // TOUCH5
+  //{  13, false, false, "", false, 0 },                   // TOUCH4, reserved for SPI
+  //{  12, false, false, "", false, 0 },                   // TOUCH5, reserved for SPI
   {  14, false, false, "", false, 0 },                   // TOUCH6
   {  27, false, false, "", false, 0 },                   // TOUCH7
   {  33, false, false, "", false, 0 },                   // TOUCH8
@@ -475,6 +521,28 @@ touchpin_struct   touchpin[] =                           // Touch pins and progr
   {  -1, false, false, "", false, 0 }                    // End of list
   // End of table
 } ;
+#endif
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+touchpin_struct   touchpin[] =                           // Touch pins and programmed function
+{
+  {   1, true,  false, "", false, 0 },                   // TOUCH1
+  {   2, false, false, "", false, 0 },                   // TOUCH2
+  {   3, false, false, "", false, 0 },                   // TOUCH3
+  {   4, false, false, "", false, 0 },                   // TOUCH4
+  {   5, false, false, "", false, 0 },                   // TOUCH5
+  {   6, false, false, "", false, 0 },                   // TOUCH6
+  {   7, false, false, "", false, 0 },                   // TOUCH7
+  {   8, false, false, "", false, 0 },                   // TOUCH8
+  {   9, false, false, "", false, 0 },                   // TOUCH9
+  {  10, false, false, "", false, 0 },                   // TOUCH10
+  {  11, false, false, "", false, 0 },                   // TOUCH11
+  {  12, false, false, "", false, 0 },                   // TOUCH12
+  {  13, false, false, "", false, 0 },                   // TOUCH13
+  {  14, false, false, "", false, 0 },                   // TOUCH14
+  {  -1, false, false, "", false, 0 }                    // End of list
+  // End of table
+} ;
+#endif
 
 
 //**************************************************************************************************
@@ -1877,9 +1945,9 @@ void readIOprefs()
       { "pin_eth_mdio",  &ini_block.eth_mdio_pin,     18 },
       { "pin_eth_power", &ini_block.eth_power_pin,    16 },
     #else
-      { "pin_spi_sck",   &ini_block.spi_sck_pin,      18 }, // Note: different for AI Audio kit (14)
-      { "pin_spi_miso",  &ini_block.spi_miso_pin,     19 }, // Note: different for AI Audio kit (2)
-      { "pin_spi_mosi",  &ini_block.spi_mosi_pin,     23 }, // Note: different for AI Audio kit (15)
+      { "pin_spi_sck",   &ini_block.spi_sck_pin,      SCK  }, // Note: different for AI Audio kit (14)
+      { "pin_spi_miso",  &ini_block.spi_miso_pin,     MISO }, // Note: different for AI Audio kit (2)
+      { "pin_spi_mosi",  &ini_block.spi_mosi_pin,     MOSI }, // Note: different for AI Audio kit (15)
     #endif
       { NULL,            NULL,                        0  }  // End of list
   } ;
@@ -2739,7 +2807,7 @@ void setup()
     gettime() ;                                           // Sync time
   }
   adc1_config_width ( ADC_WIDTH_12Bit ) ;
-  adc1_config_channel_atten ( ADC1_CHANNEL_0, ADC_ATTEN_DB_12 ) ;  // VP/GPIO36 (old esp-idf 11, now 12)
+  adc1_config_channel_atten ( ADC1_CHANNEL_0, ADC_ATTEN_DB_12 ) ;  // VP/GPIO36 (ESP32), GPIO1 (ESP32-S3)
   xTaskCreatePinnedToCore (
     playtask,                                             // Task to play data in dataqueue.
     "Playtask",                                           // Name of task.

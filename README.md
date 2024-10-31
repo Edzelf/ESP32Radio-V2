@@ -7,6 +7,7 @@ New version of the well known ESP32 Radio.  Now optional I2S output and SP/DIF o
 ![SAM_2922](https://github.com/Edzelf/ESP32Radio-V2/assets/18257026/a58f7b7e-cdd4-4d7f-96b8-62fa487de906)
 
 Updates:
+- 17-oct-2024: Experimental support for ESP32-S3. SP/DIF tested.
 - 30-sep-2024: Enhancements to tiny OLEDs, OTA beautified (Trip5 Update).
 - 05-jul-2024: Correction SPDIF output.
 - 12-mar-2024: Add document with building instructions.  New PCB available! See [here at PCBWay](https://www.pcbway.com/project/shareproject/W652317AS2P1_Gerber_ESP32_Radio_PCB_ESP32_Radio_fab8a6d9.html).
