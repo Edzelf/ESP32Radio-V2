@@ -64,6 +64,9 @@ void setup()
   preferences.putString ( "clk_offset",  "1" ) ;
   preferences.putString ( "clk_dst",     "1" ) ;
   //
+  preferences.putString ( "disp_time",  "45" ) ;
+  preferences.putString ( "disp_blank",  "true" ) ;
+  //
   preferences.putString ( "pin_ir",      "35                                     # GPIO Pin number for IR receiver VS1838B" ) ;
   preferences.putString ( "ir_40BF",     "upvolume = 2" ) ;
   preferences.putString ( "ir_C03F",     "downvolume = 2" ) ;
