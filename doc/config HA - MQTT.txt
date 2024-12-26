@@ -1,0 +1,55 @@
+https://github.com/Edzelf/ESP32Radio-V2/discussions/165
+
+Set up MQTT broker (if not already), like Mosquitto.
+Link broker to HA - set up generic MQTT integration.
+Configure Radio's MQTT config with IP / address, port, username and password of the Broker.
+Set mqttprefix to a useful unique ID, like "RadioLivingRoom" or similar.
+Restart radio.
+Use MQTT analyzer like MQTT-Explorer, connect to your Broker and look for the messages from the radio.
+Open the main HA config file configuration.yaml in your favorite text editor.
+Add following code at the end, similar to this and modify to suit your parameters and config.
+Open HA developer Tools, check config, restart HA. On further modifications you can use Reload manually configured MQTT command.
+Open Entities of the MQTT integration and set Location for each one as per your needs.
+
+mqtt:
+# MQTT Radio
+# https://www.home-assistant.io/integrations/number.mqtt/
+  - number:
+      name: "Radio Xmas Volume"
+      unique_id: "RadioXmasVolume"
+      state_topic : "radioxmas/volume"
+      command_topic: "radioxmas/command"
+      command_template: "volume={{ value }}"
+      min: 0
+      max: 100
+      step: 5
+      icon: mdi:volume-high
+      mode: slider
+
+  - number:
+      name: "Radio Xmas Preset"
+      unique_id: "RadioXmasPreset"
+      state_topic : "radioxmas/preset"
+      command_topic: "radioxmas/command"
+      command_template: "preset={{ value }}"
+      min: 0
+      max: 4
+      step: 1
+      icon: mdi:knob
+      mode: box
+
+# https://www.home-assistant.io/integrations/text.mqtt/
+  - text:
+      name: "Radio Xmas Station"
+      unique_id: "RadioXmasStationName"
+      icon: mdi:antenna
+      state_topic: "radioxmas/icy/name"
+      command_topic: "radioxmas/none"
+
+  - text:
+      name: "Radio Xmas Title"
+      unique_id: "RadioXmasSongTitle"
+      icon: mdi:script-text-outline
+      state_topic: "radioxmas/icy/streamtitle"
+      command_topic: "radioxmas/none"
+
