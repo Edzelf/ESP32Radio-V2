@@ -1,0 +1,15 @@
+
+OLED
+    ssd1306_128x64_i2c 
+    SDA  GPIO4
+    SCL  GPIO15
+    RST  GPIO16 - not used in FW
+
+LED
+    positive GPIO25
+
+
+
+
+DAC output 1 : GPIO25
+DAC output 2 : GPIO26
