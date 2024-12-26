@@ -1,64 +1,40 @@
-# Example configuration
-# Programmable input pins:
+clk_dst = 1
+clk_offset = 0
+clk_server = pool.ntp.org
+#
 gpio_00 = uppreset = 1
-gpio_12 = upvolume = 2
-gpio_13 = downvolume = 2
-gpio_14 = stop
-gpio_17 = resume
-gpio_34 = station = icecast.omroep.nl:80/radio1-bb-mp3
 #
-# MQTT settings
+lstmods = Fri, 12 Nov 2021 10:46:40 GMT
+#
 mqttbroker = none
+mqttpasswd = *******
 mqttport = 1883
-mqttuser = none
-mqttpasswd = none
 mqttprefix = none
-# Enter your WiFi network specs here:
-wifi_00 = SSID1/PASSWD1
-wifi_01 = SSID2/PASSWD2
+mqttuser = none
 #
-volume = 72
+pin_enc_clk = -1                                   # GPIO Pin number for rotary encoder CLK
+pin_enc_dt = -1                                    # GPIO Pin number for rotary encoder DT
+pin_enc_sw = -1                                    # GPIO Pin number for rotary encoder SW
+pin_ir = -1                                        # GPIO Pin number for IR receiver VS1838B
+pin_tft_scl = 15      # GPIO Pin number for OLED SCL
+pin_tft_sda = 4       # GPIO Pin number for OLED SDA
+#
+preset = 3
+preset_00 = stream02.exit.si:8000/radiohit           # 0 Radio HIT slo
+preset_01 = 22613.live.streamtheworld.com:80/SRGSTR08.mp3  # 14 Sky Radio Christmas
+preset_02 = www.radio-xmas.at:443/xmas?1512905036085       # 15 Radio Xmas AT
+preset_03 = live1.jupinfo.fr:8000/radiodenoel              # 16 La radio de Noel FR
+#
 toneha = 0
-tonehf = 0
-tonela = 0
-tonelf = 0
+tonehf = 2
+tonela = 4
+tonelf = 5
 #
-preset = 6
-# Some preset examples
-preset_00 = 109.206.96.34:8100                       #  0 - NAXI LOVE RADIO, Belgrade, Serbia
-preset_01 = airspectrum.cdnstream1.com:8114/1648_128 #  1 - Easy Hits Florida 128k
-preset_02 = us2.internet-radio.com:8050              #  2 - CLASSIC ROCK MIAMI 256k
-preset_03 = airspectrum.cdnstream1.com:8000/1261_192 #  3 - Magic Oldies Florida
-preset_04 = airspectrum.cdnstream1.com:8008/1604_128 #  4 - Magic 60s Florida 60s Classic Rock
-preset_05 = us1.internet-radio.com:8105              #  5 - Classic Rock Florida - SHE Radio
-preset_06 = icecast.omroep.nl:80/radio1-bb-mp3       #  6 - Radio 1, NL
-preset_07 = 205.164.62.15:10032                      #  7 - 1.FM - GAIA, 64k
-preset_08 = skonto.ls.lv:8002/mp3                    #  8 - Skonto 128k
-preset_09 = 94.23.66.155:8106                        #  9 - *ILR CHILL and GROOVE
-preset_10 = ihr/IHR_IEDM                             # 10 - iHeartRadio IHR_IEDM
-preset_11 = ihr/IHR_TRAN                             # 11 - iHeartRadio IHR_TRAN
+volume = 90
 #
-# Clock offset and daylight saving time
-clk_server = pool.ntp.org                            # Time server to be used
-clk_offset = 1                                       # Offset with respect to UTC in hours
-clk_dst = 1                                          # Offset during daylight saving time (hours)
-# Some IR codes
-ir_40BF = upvolume = 2
-ir_C03F = downvolume = 2
-# GPIO pinnings
-pin_ir = 35                                          # GPIO Pin number for IR receiver VS1838B
-pin_enc_clk = 25                                     # GPIO Pin number for rotary encoder "CLK"
-pin_enc_dt = 26                                      # GPIO Pin number for rotary encoder "DT"
-pin_enc_sw = 27                                      # GPIO Pin number for rotary encoder "SW"
+wifi_00 = USER/PASS
+wifi_01 = USER/PASS
 #
-pin_tft_cs = 15                                      # GPIO Pin number for TFT "CS"
-pin_tft_dc = 2                                       # GPIO Pin number for TFT "DC"
-#
-# define pins for decoder.  Examples for VS1053 and I2S:respect
-pin_vs_cs = 5                                        # GPIO Pin number for VS1053 "CS"
-pin_vs_dcs = 32                                      # GPIO Pin number for VS1053 "DCS"
-pin_vs_dreq = 34                                     # GPIO Pin number for VS1053 "DREQ"
-#
-#pin_i2s_bck = 5                                      # GPIO Pin number for I2S "BCK"
-#pin_i2s_lck = 32                                     # GPIO Pin number for I2S "L(R)CK"
-#pin_i2s_din = 34                                     # GPIO Pin number for I2S "DIN"
+# Screensaving Options
+disp_time = 45                                       # Turn off backlight / blank display (seconds)
+disp_blank = true                                    # Enables blanking the display

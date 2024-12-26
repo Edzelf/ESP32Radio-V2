@@ -108,7 +108,7 @@
 
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Sun, 24 Mar 2024 16:00:00 GMT"
+#define VERSION     "Wed, 06 Mar 2024 16:00:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "soc/soc.h"                                      // For brown-out detector setting
@@ -160,7 +160,7 @@
 #endif
 #define MAXKEYS           200                             // Max. number of NVS keys in table
 #define FSIF              true                            // Format SPIFFS if not existing
-#define STREAM_QUEUE_SIZE 1600                            // Number of entries in the queue (default 400) https://github.com/Edzelf/ESP32Radio-V2/issues/75
+#define QSIZ              1800                             // Number of entries in the MP3 stream queue
 #define NVSBUFSIZE        150                             // Max size of a string in NVS
 // Access point name if connection to WiFi network fails.  Also the hostname for WiFi and OTA.
 // Note that the password of an AP must be at least as long as 8 characters.
@@ -171,7 +171,7 @@
 #define MAXPRESETS        200                             // Max number of presets in preferences
 #define MAXMQTTCONNECTS   5                               // Maximum number of MQTT reconnects before give-up
 #define METASIZ           1024                            // Size of metaline buffer
-#define BL_TIME           45000                           // Time-out [sec] for blanking TFT display (BL pin)
+#define BL_TIME           45                              // Time-out [sec] for blanking TFT display (BL pin) (this used if not in prefs)
 //
 // Subscription topics for MQTT.  The topic will be pefixed by "PREFIX/", where PREFIX is replaced
 // by the the mqttprefix in the preferences.  The next definition will yield the topic
@@ -271,6 +271,8 @@ struct ini_struct
   int8_t         eth_power_pin ;                      // GPIO Pin number for Ethernet controller POWER
   uint16_t       bat0 ;                               // ADC value for 0 percent battery charge
   uint16_t       bat100 ;                             // ADC value for 100 percent battery charge
+  uint16_t       disp_time ;                          // Turns off backlight or blanks display
+  bool           disp_blank ;                         // Enable blanking of the display
 } ;
 
 struct WifiInfo_t                                     // For list with WiFi info
@@ -368,6 +370,7 @@ uint16_t             adcvalraw ;                         // ADC value (raw)
 uint16_t             adcval ;                            // ADC value (battery voltage, averaged)
 uint32_t             clength ;                           // Content length found in http header
 uint16_t             bltimer = 0 ;                       // Backlight time-out counter
+bool                 disp_data = true ;                  // Sending data to display is OK?
 bool                 dsp_ok = false ;                    // Display okay or not
 int                  ir_intcount = 0 ;                   // For test IR interrupts
 bool                 spftrigger = false ;                // To trigger execution of special functions
@@ -983,10 +986,14 @@ void IRAM_ATTR timer100()
       }
     }
     time_req = true ;                             // Yes, show current time request
-    if ( ++bltimer == BL_TIME )                   // Time to blank the TFT screen?
+    if ( ++bltimer == ini_block.disp_time )       // Time to blank/turn of backlight?
     {
       bltimer = 0 ;                               // Yes, reset counter
       blset ( false ) ;                           // Disable TFT (backlight)
+      if ( ini_block.disp_blank == true )         // Is the Display blanking option on?
+      {
+        disp_data = false ;                       // Turn off sending data to display
+      }      
     }
   }
   // Handle rotary encoder. Inactivity counter will be reset by encoder interrupt
@@ -1257,20 +1264,18 @@ bool showstreamtitle ( const char *ml, bool full )
       *p1++ = '\\' ;                            // Found: replace 3 characters by "\r"
       *p1++ = 'r' ;                             // Found: replace 3 characters by "\r"
     #else
-//    *p1++ = '\n' ;                            // Found: replace 3 characters by newline
-      *p1++ = '\0' ;                            // Found: replace 3 characters by Terminator; string is now split into two
+      *p1++ = '\n' ;                            // Found: replace 3 characters by newline
     #endif
     if ( *p2 == ' ' )                           // Leading space in title?
     {
       p2++ ;
     }
-//  strcpy ( p1, p2 ) ;                         // Shift 2nd part of title 2 or 3 places
+    strcpy ( p1, p2 ) ;                         // Shift 2nd part of title 2 or 3 places
   }
   if ( strcmp ( oldstreamtitle,                 // Change in tiltlke?
                 streamtitle ) != 0 )
   {
-    tftset ( 1, streamtitle ) ;                 // Yes, set screen segment text middle part A
-    tftset ( 2, p2 ) ;                          // Set screen segment text middle part B (Title)
+    tftset ( 1, streamtitle ) ;                 // Yes, set screen segment text middle part
     return true ;                               // Return true if tiitle has changed
   }
   return false ;
@@ -1301,7 +1306,7 @@ void stop_mp3client ()
   while ( mp3client && mp3client->connected() )    // Client active and connected?
   {
     ESP_LOGI ( TAG, "Stopping client" ) ;          // Yes, stop connection to host
-    mp3client->close() ;                           // Causes memory leak!
+    //mp3client->close() ;                         // Causes memory leak!
     mp3client->abort() ;                           // This works better
     vTaskDelay ( 500 / portTICK_PERIOD_MS ) ;
   }
@@ -1331,9 +1336,7 @@ bool connecttohost()
   ESP_LOGI ( TAG, "Connect to host %s",
              presetinfo.host.c_str() ) ;
   tftset ( 0, NAME ) ;                               // Set screen segment text top line
-  tftset ( 1, "" ) ;                                 // Clear artist
-  tftset ( 2, "" ) ;                                 // Clear song 
-  tftset ( 3, "" ) ;                                 // Clear station
+  tftset ( 1, "" ) ;                                 // Clear song and artist
   displaytime ( "" ) ;                               // Clear time on TFT screen
   setdatamode ( INIT ) ;                             // Start default in INIT mode
   chunked = false ;                                  // Assume not chunked
@@ -1359,7 +1362,8 @@ bool connecttohost()
     port = hostwoext.substring ( inx + 1 ).toInt() ; // Get portnumber as integer
     hostwoext = hostwoext.substring ( 0, inx ) ;     // Host without portnumber
   }
-  ESP_LOGI ( TAG, "Connect to %s on port %d, extension %s", hostwoext.c_str(), port, extension.c_str() ) ;
+  //ESP_LOGI ( TAG, "Connect to %s on port %d, extension %s",
+  //           hostwoext.c_str(), port, extension.c_str() ) ;
   if ( mp3client->connect ( hostwoext.c_str(), port ) )
   {
     if ( nvssearch ( "basicauth" ) )                 // Does "basicauth" exists?
@@ -1556,9 +1560,6 @@ bool connectwifi()
     ESP_LOGI ( TAG, "WiFi Failed!  Trying to setup AP with"
                " name %s and password %s.",
                NAME, NAME ) ;
-    dsp_setTextColor ( RED ) ;                         // Startup info color
-    tftlog ( "Local AP Active!", true ) ;   
-    dsp_setTextColor ( WHITE ) ;                        // Startup info color
     WiFi.disconnect ( true ) ;                          // After restart the router could
     WiFi.softAPdisconnect ( true ) ;                    // still keep the old connection
     if ( ! WiFi.softAP ( NAME, NAME ) )                 // This ESP will be an AP
@@ -1569,20 +1570,16 @@ bool connectwifi()
   }
   else
   {
-    dsp_setTextColor ( GREEN ) ;                         // Startup info color
     tftlog ( "SSID = " ) ;                              // Show SSID on display
     tftlog ( WiFi.SSID().c_str(), true ) ;
-    dsp_setTextColor ( WHITE ) ;                         // Startup info color
     ESP_LOGI ( TAG, "SSID = %s",                        // Format string with SSID connected to
                WiFi.SSID().c_str() ) ;
     ipaddress = WiFi.localIP().toString() ;             // Form IP address
   }
   pIP = ipaddress.c_str() ;                             // As c-string
   ESP_LOGI ( TAG, "IP = %s", pIP ) ;
-  dsp_setTextColor ( GREEN ) ;                          // Startup info color
   tftlog ( "IP = " ) ;                                  // Show IP
   tftlog ( pIP, true ) ;
-  dsp_setTextColor ( WHITE ) ;                         // Startup info color
   #ifdef NEXTION
     vTaskDelay ( 2000 / portTICK_PERIOD_MS ) ;          // Show for some time
     dsp_println ( "\f" ) ;                              // Select new page if NEXTION 
@@ -1602,7 +1599,7 @@ void otastart()
   const char* p = "OTA update Started" ;
 
   ESP_LOGI ( TAG, "%s", p ) ;                      // Show event for debug
-  tftset ( 4, p ) ;                                // Set screen segment bottom part
+  tftset ( 2, p ) ;                                // Set screen segment bottom part
   mp3client->abort() ;                             // Stop client
   timerAlarmDisable ( timer ) ;                    // Disable the timer
   disableCore0WDT() ;                              // Disable watchdog core 0
@@ -1619,7 +1616,7 @@ void otastart()
 void otaerror ( ota_error_t error)
 {
   ESP_LOGE ( TAG, "OTA error %d", error ) ;
-  tftset ( 4, "OTA error!" ) ;                        // Set screen segment bottom part
+  tftset ( 2, "OTA error!" ) ;                        // Set screen segment bottom part
 }
 #endif                                                // ENABLEOTA
 
@@ -1749,7 +1746,8 @@ void reservepin ( int8_t rpinnr )
       {
         ESP_LOGE ( TAG, "Pin %d is already reserved!", rpinnr ) ;
       }
-      ESP_LOGE ( TAG, "GPIO%02d unavailabe for 'gpio_'-command", pin ) ;
+      //ESP_LOGE ( TAG, "GPIO%02d unavailabe for 'gpio_'-command",
+      //           pin ) ;
       progpin[i].reserved = true ;                          // Yes, pin is reserved now
       break ;                                               // No need to continue
     }
@@ -1761,7 +1759,8 @@ void reservepin ( int8_t rpinnr )
   {
     if ( pin == rpinnr )                                    // Entry found?
     {
-      ESP_LOGI ( TAG, "GPIO%02d unavailabe for touch command", pin ) ;
+      //ESP_LOGI ( TAG, "GPIO%02d unavailabe for touch command",
+      //           pin ) ;
       touchpin[i].reserved = true ;                         // Yes, pin is reserved now
       break ;                                               // No need to continue
     }
@@ -2509,6 +2508,8 @@ void setup()
   ini_block.clk_dst = 1 ;                                // DST is +1 hour
   ini_block.bat0 = 2600 ;                                // Battery ADC level for 0 percent
   ini_block.bat100 = 2950 ;                              // Battery ADC level for 100 percent
+  ini_block.disp_time = BL_TIME ;                        // Use defined BL_TIME as default
+  ini_block.disp_blank = false ;                         // Screen blanking off by default
   readIOprefs() ;                                        // Read pins used for SPI, TFT, VS1053, IR,
                                                          // Rotary encoder
   for ( i = 0 ; (pinnr = progpin[i].gpio) >= 0 ; i++ )   // Check programmable input pins
@@ -2527,10 +2528,8 @@ void setup()
     ESP_LOGI ( TAG, "GPIO%d is %s", pinnr, p ) ;
   }
   readprogbuttons() ;                                    // Program the free input pins
-  ESP_LOGI ( TAG, "Config prog buttons..." ) ;
   if ( ini_block.spi_sck_pin >= 0 )
   {
-    ESP_LOGI ( TAG, "Init VSPI bus..." ) ;
     SPI.begin ( ini_block.spi_sck_pin,                   // Init VSPI bus with default or modified pins
                 ini_block.spi_miso_pin,
                 ini_block.spi_mosi_pin ) ;
@@ -2550,7 +2549,7 @@ void setup()
     dsp_erase() ;                                        // Clear screen
     dsp_setRotation() ;                                  // Usse landscape format
     dsp_setTextSize ( DEFTXTSIZ ) ;                      // Small character font
-    dsp_setTextColor ( WHITE ) ;                         // Info in white
+    dsp_setTextColor ( GREY ) ;                          // Info in grey
     dsp_setCursor ( 0, 0 ) ;                             // Top of screen
     dsp_println ( "Starting......" ) ;
     strncpy ( tmpstr, VERSION, 16 ) ;                    // Limit version length
@@ -2571,10 +2570,8 @@ void setup()
     pinMode ( ini_block.tft_blx_pin, OUTPUT ) ;          // Yes, enable output
   }
   blset ( true ) ;                                       // Enable backlight (if configured)
+  disp_data = true ;                                     // Turn on sending data to display
   #ifndef ETHERNET
-    ESP_LOGI ( TAG, "Start WiFi..." ) ;
-    dsp_println ( "List of WiFi networks.." ) ;
-    dsp_update() ;                                         // To physical screen
     mk_lsan() ;                                          // Make a list of acceptable networks
                                                          // in preferences.
     WiFi.disconnect() ;                                  // After restart router could still
@@ -2584,13 +2581,10 @@ void setup()
     vTaskDelay ( 500 / portTICK_PERIOD_MS ) ;            // ??
     WiFi.persistent ( false ) ;                          // Do not save SSID and password
   #endif
-  ESP_LOGI ( TAG, "Init hardware..." ) ;
-  dsp_println ( "Init hardware.." ) ;
-  dsp_update() ;                                         // To physical screen
   readprefs ( false ) ;                                  // Read preferences
   radioqueue = xQueueCreate ( 10,                        // Create small queue for communication to radiofuncs
                              sizeof ( qdata_type ) ) ;
-  dataqueue = xQueueCreate  ( STREAM_QUEUE_SIZE,                      // Create queue for data communication
+  dataqueue = xQueueCreate  ( QSIZ,                      // Create queue for data communication
                              sizeof ( qdata_struct ) ) ;
   p = "Connect to network" ;                             // Show progress
   ESP_LOGI ( TAG, "%s", p ) ;
@@ -2603,9 +2597,7 @@ void setup()
   #endif
   tcpip_adapter_set_hostname ( TCPIP_ADAPTER_IF_STA,
                                NAME ) ;
-  p = "Starting web server" ;                            // Show progress
-  ESP_LOGI ( TAG, "%s", p ) ;
-  tftlog ( p, true ) ;                                   // On TFT too
+  ESP_LOGI ( TAG, "Start web server" ) ;
   cmdserver.on ( "/getprefs",  handle_getprefs ) ;       // Handle get preferences
   cmdserver.on ( "/saveprefs", handle_saveprefs ) ;      // Handle save preferences
   cmdserver.on ( "/getdefs",   handle_getdefs ) ;        // Handle get default config
@@ -2703,7 +2695,7 @@ void setup()
     gettime() ;                                           // Sync time
   }
   adc1_config_width ( ADC_WIDTH_12Bit ) ;
-  adc1_config_channel_atten ( ADC1_CHANNEL_0, ADC_ATTEN_DB_11 ) ;  // VP/GPIO36
+  adc1_config_channel_atten ( ADC1_CHANNEL_0, ADC_ATTEN_DB_12 ) ;  // VP/GPIO36
   xTaskCreatePinnedToCore (
     playtask,                                             // Task to play data in dataqueue.
     "Playtask",                                           // Name of task.
@@ -3036,6 +3028,34 @@ void handleVolPub()
   }
 }
 
+//**************************************************************************************************
+//                                    R E D R A W D I S P L A Y                                    *
+//**************************************************************************************************
+// Fully redraws entire display (0) or some part: top (1) middle (2) bottom (3)                    *
+//**************************************************************************************************
+void redrawdisplay ( int8_t i )
+{
+  disp_data = true ;
+  if (i == 0 || i == 1)
+  {
+      tftset ( 0, NAME ) ;                                    // Set screen segment text top line
+      displaytime ( "" ) ;                                    // Clear time on TFT screen
+      displaytime ( timetxt ) ;                               // Write to TFT screen
+      displaybattery ( 0, 100, 0 ) ;                          // Actually this draws an
+      displaybattery ( ini_block.bat0, ini_block.bat100,      // Show battery charge on display
+                       adcval ) ;
+  }
+  if (i == 0 || i == 2)
+  {
+      if ( showstreamtitle ( ( "StreamTitle=" + icystreamtitle ).c_str() ) ) { } // Stream Title
+  }
+  if (i == 0 || i == 3)
+  {
+      displayvolume ( 0 ) ;                                   // Forget previous value
+      displayvolume ( player_getVolume() ) ;                  // Show volume on display
+      tftset ( 2, icyname ) ;                                 // Restore screen segment bottom part
+  }
+}
 
 //**************************************************************************************************
 //                                           C H K _ E N C                                         *
@@ -3046,7 +3066,6 @@ void chk_enc()
 {
   static int16_t enc_preset ;                                 // Selected preset
   String         tmp, tmp2 ;                                  // Temporary strings
-
   if ( enc_menu_mode != VOLUME )                              // In default mode?
   {
     if ( enc_inactivity > 50 )                                // No, more than 5 seconds inactive
@@ -3054,13 +3073,22 @@ void chk_enc()
       enc_inactivity = 0 ;
       enc_menu_mode = VOLUME ;                                // Return to VOLUME mode
       ESP_LOGI ( TAG, "Encoder mode back to VOLUME" ) ;
+      redrawdisplay ( 3 ) ;
     }
   }
   if ( singleclick || doubleclick ||                          // Any activity?
        tripleclick || longclick ||
        ( rotationcount != 0 ) )
   {
-    blset ( true ) ;                                          // Yes, activate display if needed
+    blset ( true ) ;                                          // Yes, activate display backlight if needed
+    if ( !disp_data )                                         // Turn on sending data to display (and do full redraw)
+    {
+      if ( !muteflag && singleclick )                         // If it was muted, single-click allows unmute...
+      {
+        singleclick = false ;                                 // otherwise only wakes up the screen instead of muting
+      }
+      redrawdisplay ( 0 ) ;
+    }
   }
   else
   {
@@ -3075,7 +3103,7 @@ void chk_enc()
       {
         enc_menu_mode = TRACK ;                               // Swich to TRACK mode
         ESP_LOGI ( TAG, "Encoder mode set to TRACK" ) ;
-        tftset ( 4, "Turn to select track\n"                  // Show current option
+        tftset ( 3, "Turn to select track\n"                  // Show current option
                     "Press to confirm" ) ;
         getSDFileName ( +1 ) ;                                // Start with next file on SD
       }
@@ -3091,8 +3119,13 @@ void chk_enc()
     doubleclick = false ;
     enc_menu_mode = PRESET ;                                  // Swich to PRESET mode
     ESP_LOGI ( TAG, "Encoder mode set to PRESET" ) ;
-    tftset ( 4, "Turn to select station\n"                    // Show current option
+    #if defined(OLED1306) || defined(OLED1309) || defined(OLED1106) // Fix fit for small displays
+      tftset ( 3, "Turn & choose station"                     // Show current option
                 "Press to confirm" ) ;
+    #else
+      tftset ( 3, "Turn to select station\n"                  // Show current option
+                "Press to confirm" ) ;
+    #endif
     enc_preset = presetinfo.preset ;                          // Start with current preset
     updateNr ( &enc_preset, presetinfo.highest_preset,        // plus 1
                1, true ) ;
@@ -3106,7 +3139,7 @@ void chk_enc()
       case VOLUME :
         if ( muteflag )
         {
-          tftset ( 3, icyname ) ;                             // Restore screen segment bottom part
+          tftset ( 2, icyname ) ;                             // Restore screen segment bottom part
         }
         else
         {
@@ -3119,13 +3152,13 @@ void chk_enc()
         nextPreset ( enc_preset ) ;                           // Make a definite choice
         enc_menu_mode = VOLUME ;                              // Back to default mode
         myQueueSend ( radioqueue, &startcmd ) ;               // Signal radiofuncs()
-        tftset ( 3, icyname ) ;                               // Restore screen segment bottom part
+        tftset ( 2, icyname ) ;                               // Restore screen segment bottom part
         break ;
     #ifdef SDCARD
       case TRACK :
         myQueueSend ( sdqueue, &startcmd ) ;                  // Signal SDfuncs()
         enc_menu_mode = VOLUME ;                              // Back to default mode
-        tftset ( 3, icyname ) ;                               // Restore screen segment bottom part
+        tftset ( 2, icyname ) ;                               // Restore screen segment bottom part
         break ;
     #endif
       default :
@@ -3229,7 +3262,7 @@ void spfuncs()
   if ( spftrigger )                                             // Will be set every 100 msec
   {
     spftrigger = false ;                                        // Reset trigger
-    if ( dsp_ok )                                               // Posible to update TFT?
+    if ( dsp_ok && disp_data )                                  // Posible to update Display?
     {
       for ( uint16_t i = 0 ; i < TFTSECS ; i++ )                // Yes, handle all sections
       {
@@ -3242,6 +3275,11 @@ void spfuncs()
         }
       }
       dsp_update ( enc_menu_mode == VOLUME ) ;                  // Be sure to paint physical screen
+    }
+    if ( dsp_ok && !disp_data )                                 // Clear the screen if not being used...
+    {
+      dsp_erase() ;                                             // Clear screen
+      dsp_update ( enc_menu_mode == VOLUME ) ;                  // Show on physical screen if needed
     }
     if ( muteflag )                                             // Mute or not?
     {
@@ -3263,10 +3301,14 @@ void spfuncs()
         gettime() ;                                             // Yes, get the current time
       }
       time_req = false ;                                        // Yes, clear request
-      displaytime ( timetxt ) ;                                 // Write to TFT screen
-      displayvolume ( player_getVolume() ) ;                    // Show volume on display
-      displaybattery ( ini_block.bat0, ini_block.bat100,        // Show battery charge on display
+
+      if ( disp_data )                                          // Sending data to display is OK?
+      {
+        displaytime ( timetxt ) ;                               // Write to TFT screen
+        displayvolume ( player_getVolume() ) ;                  // Show volume on display
+        displaybattery ( ini_block.bat0, ini_block.bat100,      // Show battery charge on display
                        adcval ) ;
+      }
     }
     if ( mqtt_on )
     {
@@ -3284,7 +3326,6 @@ void spfuncs()
                adcvalraw ) / 16 ;
   }
 }
-
 
 //**************************************************************************************************
 //                                     R A D I O F U N C S                                         *
@@ -3614,7 +3655,7 @@ void handlebyte_ch ( uint8_t b )
           {
             icyname = presetinfo.hsym ;                 // Yes, use symbolic name
           }
-          tftset ( 3, icyname ) ;                       // Set screen segment bottom part
+          tftset ( 2, icyname ) ;                       // Set screen segment bottom part
           mqttpub.trigger ( MQTT_ICYNAME ) ;            // Request publishing to MQTT
         }
         else if ( lcml.startsWith ( "transfer-encoding:" ) )
@@ -3973,6 +4014,8 @@ const char* analyzeCmd ( const char* str )
 //   reset                                  // Restart the ESP32                                   *
 //   bat0       = 2318                      // ADC value for an empty battery                      *
 //   bat100     = 2916                      // ADC value for a fully charged battery               *
+//   disp_time = 45                         // Turns off backlight / blanks display in x seconds   *
+//   disp_blank = false                     // Allows blanking of display *)                       *
 //  Commands marked with "*)" are sensible during initialization only                              *
 //**************************************************************************************************
 const char* analyzeCmd ( const char* par, const char* val )
@@ -3985,6 +4028,7 @@ const char* analyzeCmd ( const char* par, const char* val )
   bool               relative = false ;               // Relative argument (+ or -)
 
   blset ( true ) ;                                    // Enable backlight of TFT
+  disp_data = true ;                                  // Turn on sending data to display
   strcpy ( reply, "Command accepted" ) ;              // Default reply
   argument = String ( par ) ;                         // Get the argument
   chomp ( argument ) ;                                // Remove comment and useless spaces
@@ -4086,19 +4130,6 @@ const char* analyzeCmd ( const char* par, const char* val )
               value.c_str() ) ;
     utf8ascii_ip ( reply ) ;                          // Remove possible strange characters
   }
-  else if ( argument == "stop" )                       // Stop request?
-  {
-    myQueueSend ( sdqueue, &stopcmd ) ;                // Stop player SD card
-    myQueueSend ( radioqueue, &stopcmd ) ;             // Stop player web radio
-    //also clear display
-    tftset ( 1, "" ) ;                                 // Clear artist
-    tftset ( 2, "  STOP" ) ;                           // Clear song 
-    tftset ( 3, "" ) ;                                 // Clear station
-  }
-  else if ( argument == "start" )                     // Start request?
-  {
-    myQueueSend ( radioqueue, &startcmd  ) ;          // Restart radio player
-  }
   else if ( argument == "sleep" )                     // Sleep request?
   {
     sleepreq = true ;                                 // Yes, set request flag
@@ -4121,8 +4152,8 @@ const char* analyzeCmd ( const char* par, const char* val )
   }
   else if ( argument == "test" )                      // Test command
   {
-    sprintf ( reply, "Free memory %d/%d, "           // Get some info to display
-              "queue %d, bitrate %d kbps\n",
+    sprintf ( reply, "Free memory is %d/%d, "         // Get some info to display
+              "chunks in queue %d, bitrate %d kbps\n",
               heapspace,
               ESP.getFreeHeap(),
               uxQueueMessagesWaiting ( dataqueue ),
@@ -4210,6 +4241,24 @@ const char* analyzeCmd ( const char* par, const char* val )
       ini_block.bat0 = ivalue ;                       // Yes, set it
     }
   }
+  else if ( argument.startsWith ( "disp_" ) )         // Disp_ value?
+  {
+    if ( argument.indexOf ( "time" ) > 0 )            // Time to turn off backlight or blank?
+    {
+      ini_block.disp_time = ivalue ;                  // Yes, set time
+      if ( ini_block.disp_time <= 5 )                 // 5 seconds or less is silly
+      {
+        ini_block.disp_time = BL_TIME ;
+      }
+    }
+    else if ( argument.indexOf ( "blank" ) )          // Blank the screen?
+    {
+      if ( value.startsWith ("true" ) )               // True? (default False)
+      {
+        ini_block.disp_blank = true ;
+      }
+    }
+  }
   else
   {
     sprintf ( reply, "%s called with illegal parameter: %s",
@@ -4218,6 +4267,41 @@ const char* analyzeCmd ( const char* par, const char* val )
   return reply ;                                      // Return reply to the caller
 }
 
+#if defined(OLED1306) || defined(OLED1309) || defined(OLED1106) // Only needed by certain displays
+//**************************************************************************************************
+//                                 N E W L I N E S T O S P A C E S                                 *
+//**************************************************************************************************
+// Used by character-limiting routine in displayinfo() - transforms newlines to spaces.            *
+//**************************************************************************************************
+String newlinestospaces(const String& str, uint16_t line_len, uint16_t max_lines) {
+    uint16_t spacedi = 0;                                  // Calculating how many characters are in resulting string 
+    uint16_t spaces = 0;                                   // How many spaces to add when encountering a newline
+    String   spaced = "";                                  // Resulting string with spaces instead of newlines
+
+    if ( str.length() == 0 )
+    {
+        return str;                                        // Return the original string for empty strings (otherwise weird)
+    }
+    for ( size_t i = 0; i < str.length(); ++i ) {
+        if (str[i] == '\n')
+        {                                                  // Calculate how many spaces needed to reach the end of line
+            spaces = ( line_len - ( spaced.length() % line_len ) );
+            for ( size_t sp = 0; sp < spaces; ++sp )
+            {
+                spaced += ' ';                             // Adding spaces to add to reach the next line_len boundary
+            }
+        } else {
+            spaced += str[i];                              // Copy over the current character
+        }
+        spacedi = spaced.length();                         // Update length
+        if ( spacedi >= ( line_len * max_lines ) ) {       // Stop if we've reached the maximum allowed number of characters
+            break;
+        }
+    }
+
+    return spaced;  // Return the newly formatted string by value
+}
+#endif
 
 //**************************************************************************************************
 //* Function that are called from spfunc().                                                        *
@@ -4227,7 +4311,7 @@ const char* analyzeCmd ( const char* par, const char* val )
 //**************************************************************************************************
 //                                      D I S P L A Y I N F O                                      *
 //**************************************************************************************************
-// Show a string on the LCD at a specified y-position (0..4) in a specified color.                 *
+// Show a string on the LCD at a specified y-position (0..2) in a specified color.                 *
 // The parameter is the index in tftdata[].                                                        *
 //**************************************************************************************************
 void displayinfo ( uint16_t inx )
@@ -4245,20 +4329,30 @@ void displayinfo ( uint16_t inx )
     dsp_fillRect ( 0, p->y, width, p->height, BLACK ) ;    // Clear the space for new info
     if ( ( dsp_getheight() > 64 ) && ( p->y > 1 ) )        // Need and space for divider?
     {
-      dsp_fillRect ( 0, p->y - 4, width, 4, BLACK ) ;      // Clear the space for divider
-      dsp_fillRect ( 0, p->y - 4, width, 1, BLUE ) ;      // Yes, show divider above text
+      dsp_fillRect ( 0, p->y - 4, width, 1, GREEN ) ;      // Yes, show divider above text
     }
-    len = p->str.length() ;                                // Required length of buffer
-    if ( len > p->str_max_len )
+
+    #if defined(OLED1306) || defined(OLED1309) || defined(OLED1106) // Need to limit characters on certain small displays
+      if ( inx == 3 || inx == 2 )                          // 3 streamtitle, menu, mute, messages & 2 icyname = 21 characters x 2 lines
       {
-      len = p->str_max_len;                                // limit number of chars to be displayed in a section to not overflow into another sections
+        p->str = newlinestospaces( p->str, 21, 2 );
       }
+      else if (inx == 1 )                                  // 1 song and artist = 21 chars x 4 lines
+      {
+        p->str = newlinestospaces( p->str, 21, 4 );
+      }
+      else if (inx == 0 )                                  // 0 NAME = 21 chars - (8 for time + 1 space))
+      {
+        p->str = newlinestospaces( p->str, 12, 1 );
+      }
+    #endif
+
+    len = p->str.length() ;                                // Required length of buffer
     if ( len++ )                                           // Check string length, set buffer length
     {
       char buf [ len ] ;                                   // Need some buffer space
       p->str.toCharArray ( buf, len ) ;                    // Make a local copy of the string
       utf8ascii_ip ( buf ) ;                               // Convert possible UTF8
-      dsp_setTextSize ( p->size ) ;                        // Selected text size
       dsp_setTextColor ( p->color ) ;                      // Set the requested color
       dsp_setCursor ( 0, p->y ) ;                          // Prepare to show the info
       dsp_println ( buf ) ;                                // Show the string
