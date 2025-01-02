@@ -11,8 +11,9 @@ Add following code at the end, similar to this and modify to suit your parameter
 Open HA developer Tools, check config, restart HA. On further modifications you can use Reload manually configured MQTT command.
 Open Entities of the MQTT integration and set Location for each one as per your needs.
 
+
 mqtt:
-# MQTT Radio
+# MQTT Radio zunaj
 # https://www.home-assistant.io/integrations/number.mqtt/
   - number:
       name: "Radio Xmas Volume"
@@ -25,6 +26,7 @@ mqtt:
       step: 5
       icon: mdi:volume-high
       mode: slider
+      availability_topic: "radioxmas/connection"
 
   - number:
       name: "Radio Xmas Preset"
@@ -37,6 +39,7 @@ mqtt:
       step: 1
       icon: mdi:knob
       mode: box
+      availability_topic: "radioxmas/connection"
 
 # https://www.home-assistant.io/integrations/text.mqtt/
   - text:
@@ -45,6 +48,7 @@ mqtt:
       icon: mdi:antenna
       state_topic: "radioxmas/icy/name"
       command_topic: "radioxmas/none"
+      availability_topic: "radioxmas/connection"
 
   - text:
       name: "Radio Xmas Title"
@@ -52,4 +56,47 @@ mqtt:
       icon: mdi:script-text-outline
       state_topic: "radioxmas/icy/streamtitle"
       command_topic: "radioxmas/none"
+      availability_topic: "radioxmas/connection"
+
+############################################################
+# MQTT Radio dnevna
+# https://www.home-assistant.io/integrations/number.mqtt/
+  - number:
+      name: "Radio Volume"
+      unique_id: "RadioDnevnaVolume"
+      state_topic : "radioDnevna/volume"
+      command_topic: "radioDnevna/command"
+      command_template: "volume={{ value }}"
+      min: 0
+      max: 100
+      step: 5
+      icon: mdi:volume-high
+      mode: slider
+
+  - number:
+      name: "Radio Preset"
+      unique_id: "RadioDnevnaPreset"
+      state_topic : "radioDnevna/preset"
+      command_topic: "radioDnevna/command"
+      command_template: "preset={{ value }}"
+      min: 0
+      max: 20
+      step: 1
+      icon: mdi:knob
+      mode: box
+
+# https://www.home-assistant.io/integrations/text.mqtt/
+  - text:
+      name: "Radio Station"
+      unique_id: "RadioDnevnaStationName"
+      icon: mdi:antenna
+      state_topic: "radioDnevna/icy/name"
+      command_topic: "radioDnevna/none"
+
+  - text:
+      name: "Radio Title"
+      unique_id: "RadioDnevnaSongTitle"
+      icon: mdi:script-text-outline
+      state_topic: "radioDnevna/icy/streamtitle"
+      command_topic: "radioDnevna/none"
 

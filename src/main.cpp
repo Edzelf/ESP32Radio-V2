@@ -177,6 +177,7 @@
 // by the the mqttprefix in the preferences.  The next definition will yield the topic
 // "ESP32Radio/command" if mqttprefix is "ESP32Radio".
 #define MQTT_SUBTOPIC     "command"                      // Command to receive from MQTT
+#define MQTT_CONN_SUBTOPIC "connection"                  // Subtopic where "online", "offline" and Last Will messages are published
 //
 #define heapspace heap_caps_get_largest_free_block ( MALLOC_CAP_8BIT )
 
@@ -345,6 +346,8 @@ String               icystreamtitle ;                    // Streamtitle from met
 String               icyname ;                           // Icecast station name
 String               audio_ct ;                          // Content-type, like "audio/aacp"
 String               ipaddress ;                         // Own IP-address
+String               mqttalivemsg;                       // MQTT mesasage for online status or LWT
+String               mqttlwtmsg;                         // MQTT mesasage for LWT
 int                  bitrate ;                           // Bitrate in kb/sec
 int                  mbitrate ;                          // Measured bitrate
 int                  metaint = 0 ;                       // Number of databytes between metadata
@@ -489,7 +492,7 @@ touchpin_struct   touchpin[] =                           // Touch pins and progr
 //**************************************************************************************************
 // ID's for the items to publish to MQTT.  Is index in amqttpub[]
 enum { MQTT_IP,     MQTT_ICYNAME, MQTT_STREAMTITLE, MQTT_NOWPLAYING,
-       MQTT_PRESET, MQTT_VOLUME, MQTT_PLAYING, MQTT_PLAYLISTPOS
+       MQTT_PRESET, MQTT_VOLUME, MQTT_PLAYING, MQTT_PLAYLISTPOS, MQTT_ALIVE
      } ;
 enum { MQSTRING, MQINT8, MQINT16 } ;                     // Type of variable to publish
 
@@ -505,7 +508,7 @@ class mqttpubc                                           // For MQTT publishing
     // Publication topics for MQTT.  The topic will be pefixed by "PREFIX/", where PREFIX is replaced
     // by the the mqttprefix in the preferences.
   protected:
-    mqttpub_struct amqttpub[9] =                         // Definitions of various MQTT topic to publish
+    mqttpub_struct amqttpub[10] =                         // Definitions of various MQTT topic to publish
     { // Index is equal to enum above
       { "ip",              MQSTRING, &ipaddress,             false }, // Definition for MQTT_IP
       { "icy/name",        MQSTRING, &icyname,               false }, // Definition for MQTT_ICYNAME
@@ -515,6 +518,7 @@ class mqttpubc                                           // For MQTT publishing
       { "volume" ,         MQINT8,   &ini_block.reqvol,      false }, // Definition for MQTT_VOLUME
       { "playing",         MQINT8,   &playingstat,           false }, // Definition for MQTT_PLAYING
       { "playlist/pos",    MQINT16,  &presetinfo.playlistnr, false }, // Definition for MQTT_PLAYLISTPOS
+      { MQTT_CONN_SUBTOPIC,MQSTRING, &mqttalivemsg,          false }, // Definition for MQTT_ALIVE
       { NULL,              0,        NULL,                   false }  // End of definitions
     } ;
   public:
@@ -1951,10 +1955,25 @@ bool mqttreconnect()
              ini_block.mqttbroker.c_str() ) ;
   sprintf ( clientid, "%s-%04d",                          // Generate client ID
             NAME, (int) random ( 10000 ) % 10000 ) ;
+/*
   res = mqttclient.connect ( clientid,                    // Connect to broker
                              ini_block.mqttuser.c_str(),
                              ini_block.mqttpasswd.c_str()
                            ) ;
+*/
+//  *id,   *user,   *pass,  willTopic, willQos, willRetain,  willMessage)
+  mqttlwtmsg = "offline"; 
+  sprintf ( subtopic, "%s/%s",
+            ini_block.mqttprefix.c_str(),
+            MQTT_CONN_SUBTOPIC ) ;
+
+  res = mqttclient.connect ( clientid,                    // Connect to broker and set LWT message at the broker
+                             ini_block.mqttuser.c_str(),
+                             ini_block.mqttpasswd.c_str(),
+                             subtopic,
+                             0,
+                             false,
+                             mqttlwtmsg.c_str() ) ;
   if ( res )
   {
     sprintf ( subtopic, "%s/%s",                          // Add prefix to subtopic
@@ -1966,6 +1985,8 @@ bool mqttreconnect()
       ESP_LOGE ( TAG, "MQTT subscribe failed!" ) ;        // Failure
     }
     mqttpub.trigger ( MQTT_IP ) ;                         // Publish own IP
+    mqttalivemsg = "online";
+    mqttpub.trigger ( MQTT_ALIVE ) ;                      // Publish Alive / Online message
   }
   else
   {
