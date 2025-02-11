@@ -74,3 +74,6 @@ volume = 100
 #
 wifi_00 = ADSL-11/DEADC0DE11
 wifi_01 = MoniNet/m1234m1234
+#
+disp_time = 45          # Turn off backlight / blank display (seconds)
+disp_blank = true       # Enables blanking the display
