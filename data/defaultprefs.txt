@@ -55,13 +55,15 @@ pin_enc_sw = 13                                      # GPIO Pin number for rotar
 pin_tft_cs = 2                                       # GPIO Pin number for TFT "CS"
 pin_tft_dc = 4                                       # GPIO Pin number for TFT "DC"
 #
-# define pins for decoder.  Examples for VS1053, I2S and Toslink
+# define pins for decoder.  Example for VS1053
 pin_vs_cs = 5                                        # GPIO Pin number for VS1053 "CS"
 pin_vs_dcs = 32                                      # GPIO Pin number for VS1053 "DCS"
 pin_vs_dreq = 15                                     # GPIO Pin number for VS1053 "DREQ"
 #
+# define pins for decoder.  Example for I2S, like PCM5102
 #pin_i2s_bck = 15                                    # GPIO Pin number for I2S "BCK"
 #pin_i2s_lck = 27                                    # GPIO Pin number for I2S "L(R)CK"
 #pin_i2s_din = 26                                    # GPIO Pin number for I2S "DIN"
 #
-#pin_i2s_spdif = 15                                  # GPIO Pin number for I2S/SPDIF (Toslink)
+# define pins for decoder.  Example for Toslink
+#pin_i2s_spdif = 15                                  # GPIO Pin number for I2S/SPDIF
