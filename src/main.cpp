@@ -107,10 +107,11 @@
 // 19-02-2024, ES: Fixed mono stream, correct handling of reset command.
 // 27-06-2024, ES: Simplified WiFi network set.
 // 17-10-2024, ES: Support for ESP32-S3.
+// 19-03-2025, ES: Correction for new Espressif SDK
 
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Thu, 17 Oct 2024 10:10:00 GMT"
+#define VERSION     "Wed, 19 Mar 2025 09:30:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "soc/soc.h"                                      // For brown-out detector setting
@@ -4435,8 +4436,6 @@ void playtask ( void * parameter )
     #else
       i2s_config.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB) ;
     #endif
-    i2s_config.dma_buf_count        = 8 ;
-    i2s_config.dma_buf_len          = 256 ;
   #endif
   //i2s_config.channel_format     = I2S_CHANNEL_FMT_RIGHT_LEFT ;   // = 0
   i2s_config.intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1 ;         // High interrupt priority
