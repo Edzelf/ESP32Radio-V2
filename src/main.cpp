@@ -108,7 +108,8 @@
 // 27-06-2024, ES: Simplified WiFi network set.
 // 17-10-2024, ES: Support for ESP32-S3.
 // 19-03-2025, ES: Correction for new Espressif SDK
-// 29-04-2025, ES: Allow special treat of "mute"-command, pako2 wish.
+// 29-04-2025, ES: Allow special treat of "mute"-command, Pako2 wish.
+//                 Correction tracks bug on SD card, Pako2 suggestion.
 
 //
 // Define the version number, the format used is the HTTP standard.
