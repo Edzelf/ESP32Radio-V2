@@ -108,10 +108,11 @@
 // 27-06-2024, ES: Simplified WiFi network set.
 // 17-10-2024, ES: Support for ESP32-S3.
 // 19-03-2025, ES: Correction for new Espressif SDK
+// 29-04-2025, ES: Allow special treat of "mute"-command, pako2 wish.
 
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Wed, 19 Mar 2025 09:30:00 GMT"
+#define VERSION     "Tue, 29 Apr 2025 10:00:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "soc/soc.h"                                      // For brown-out detector setting
@@ -2240,6 +2241,12 @@ void scanIR()
     if ( nvssearch ( mykey ) )
     {
       val = nvsgetstr ( mykey ) ;                           // Get the contents
+      #ifdef TOGGLEMUTE                                     // Special treat of mute commnad?
+        if ( val.equals ( "mute" ) && muteflag )            // Already muted?
+        {
+          val = String ( "unmute" ) ;                       // Yes, treat as "unmute"
+        }
+      #endif
       ESP_LOGI ( TAG, "IR code %04X received. Will execute %s",
                  ir_value, val.c_str() ) ;
       reply = analyzeCmd ( val.c_str() ) ;                  // Analyze command and handle it
@@ -2838,7 +2845,7 @@ size_t cb_mp3list ( uint8_t *buffer, size_t maxLen, size_t index )
 
   if ( index == 0 )                                   // First call for this page?
   {
-    i = 0 ;                                           // Yes, set index (track number)
+    i = 1 ;                                           // Yes, set index (track number)
     path = getFirstSDFileName() ;                     // Force read of next path
     eolSeen = ( path == nullptr ) ;                   // Any file?
   }
@@ -2858,7 +2865,7 @@ size_t cb_mp3list ( uint8_t *buffer, size_t maxLen, size_t index )
         len++ ;                                       // Update total length
       }
       path = getSDFileName ( i++ ) ;                  // Get next path from list
-      if ( i >= SD_filecount )                        // No more files?
+      if ( i > SD_filecount )                         // No more files?
       {
         eolSeen = true ;                              // Yes, stop
         break ;
@@ -3975,6 +3982,7 @@ const char* analyzeCmd ( const char* str )
 // Examples with available parameters:                                                             *
 //   preset     = 12                        // Select start preset to connect to                   *
 //   track      = songname                  // Select MP3 track from SD card                       *
+//   trackinx   = n                         // Select MP3 track by index from SD card.             *
 //   random                                 // Select random mP3 track                             *
 //   preset_00  = <mp3 stream>              // Specify station for a preset 00-max *)              *
 //   volume     = 95                        // Percentage between 0 and 100                        *
@@ -4098,6 +4106,11 @@ const char* analyzeCmd ( const char* par, const char* val )
     {
       setSDFileName ( value.c_str() ) ;               // Select new track by filename
     }
+    myQueueSend ( sdqueue, &startcmd ) ;              // Signal SDfuncs()
+  }
+  else if ( argument == "trackinx" )                  // MP3 track request?
+  {
+    getSDFileName ( ivalue ) ;                        // Select file by index
     myQueueSend ( sdqueue, &startcmd ) ;              // Signal SDfuncs()
   }
   else if ( argument == "random" )                    // Random MP3 track request?
@@ -4432,7 +4445,7 @@ void playtask ( void * parameter )
     i2s_config.sample_rate            = 44100 ;                      // 44100
     i2s_config.bits_per_sample        = I2S_BITS_PER_SAMPLE_16BIT ;  // (16)
     #if ESP_ARDUINO_VERSION_MAJOR >= 2                               // New version?
-      i2s_config.communication_format = I2S_COMM_FORMAT_STAND_MSB ;  // Yes, use new definition
+      i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2MSB ;  // Yes, use new definition
     #else
       i2s_config.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB) ;
     #endif
