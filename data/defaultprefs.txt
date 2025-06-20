@@ -1,70 +1,64 @@
-# Example configuration
-# Programmable input pins:
-gpio_00 = uppreset = 1
-gpio_25 = upvolume = 2
-gpio_33 = downvolume = 2
-gpio_16 = stop
-gpio_17 = resume
-gpio_21 = station = icecast.omroep.nl:80/radio1-bb-mp3
+clk_dst = 0                                          # Offset during daylight saving time (hours)
+clk_offset = 9                                       # Offset with respect to UTC in hours
+clk_server = pool.ntp.org                            # Time server to be used
 #
-# Battery monitor
-batt100 = 2950
-batt0 = 2600 
-# MQTT settings
-mqttbroker = none
+gpio_16 = preset = 0                                 # GPIO Pin number for Red Button
+gpio_17 = preset = 1                                 # GPIO Pin number for Yellow Button
+gpio_18 = preset = 2                                 # GPIO Pin number for Black Button
+#
+mqttbroker = 192.168.1.31
+mqttpasswd = cc159226
 mqttport = 1883
-mqttuser = none
-mqttpasswd = none
-mqttprefix = none
-# Enter your WiFi network specs here:
-wifi_00 = SSID1/PASSWD1
-wifi_01 = SSID2/PASSWD2
+mqttprefix = ESP32RadioSpeaker
+mqttuser = mqttuser
 #
-volume = 72
+pin_vs_cs = 9                                        # GPIO Pin number for VS1053 "CS"
+pin_vs_dcs = 14                                      # GPIO Pin number for VS1053 "DCS"
+pin_vs_dreq = 10                                     # GPIO Pin number for VS1053 "DREQ"
+pin_enc_clk = 40                                     # GPIO Pin number for rotary encoder "CLK"
+pin_enc_dt = 39                                      # GPIO Pin number for rotary encoder "DT"
+pin_enc_sw = 38                                      # GPIO Pin number for rotary encoder "SW"
+pin_tft_scl = 41                                     # GPIO Pin number for "SCL"
+pin_tft_sda = 42                                     # GPIO Pin number for "SDA"
+#
+disp_blank = true                                    # Enables blanking the display
+disp_time = 45                                       # Turn off backlight / blank display (seconds)
+#
+preset = 0
+preset_00 = nap.casthost.net:8793/stream                 # 0 - Intra Nature Radio 64k
+preset_01 = radio.stereoscenic.com/asp-s                 # 1 - Ambient Sleeping Pill 128k
+preset_02 = radio.stereoscenic.com/ama-s                 # 2 - a.m. Ambient 128k
+preset_03 = 5.196.98.236:80/stream1                      # 3 - Bru Zane Classical Radio Italy 64k
+preset_04 = 51.68.215.9:8020/radio.mp3                   # 4 - Classical for Yoga 128k
+preset_05 = 51.68.215.9:8000/radio.mp3                   # 5 - Best of Classical for Studying 128k
+preset_06 = philae.shoutca.st:8204/stream                # 6 - Radio Classic Mozart 128k
+preset_07 = 18.220.84.192:8484                           # 7 - Amadeus Vivo Classical 96k
+preset_08 = streaming.kwax.com:8000/stream1              # 8 - U of Oregon Classical KWAX 96k
+preset_09 = eurosmoothjazz.stream.laut.fm/eurosmoothjazz # 9 - Euro Smooth Jazz 128k
+preset_10 = ice1.somafm.com/deepspaceone-128-aac         # 10 - SomaFM Deep Space One 128k
+preset_11 = streams.echoesofbluemars.org:8000/cryosleep  # 11 - Cryosleep 128k
+preset_12 = ice6.somafm.com/groovesalad-128-aac          # 12 - SomaFM Groove Salad 128k
+preset_13 = media-the.musicradio.com/ChillMP3            # 13 - ChillHop 128k
+preset_14 = hyades.shoutca.st:8043/stream                # 14 - LoFi HipHop Radio 128k
+preset_15 = streams.theloungesound.ca:8059/;?.mp3        # 15 - The Lounge Sound.ca - Mtl, QC 128k
+preset_16 = s2.xrad.io:8058/stream                       # 16 - Swinging radio 60s 96k
+preset_17 = www.doowopradio.com:8000                     # 17 - Doo-Wop Radio 96k
+preset_18 = 107.181.230.178:8220/stream                  # 18 - 24-7 The 60s 128k
+preset_19 = s8.viastreaming.net:7030                     # 19 - Angel Radio 96k
+preset_20 = ais-edge90-dal03.cdnstream.com/b09584_128mp3 # 20 - Radiostorm - Oldies 104 128k
+preset_21 = 107.181.230.178:8260/stream                  # 21 - 24-7 The 70s 128k
+preset_22 = c2.auracast.net:8048/stream                  # 22 - 1000 HITS 80s 128k
+preset_23 = ais-edge89-dal02.cdnstream.com/b26873_128mp3 # 23 - Boss Boss Radio - Greatest Hits Of All Time 128k
+preset_24 = ice55.securenetsystems.net/DASH21            # 24 - Church of Rock and Roll 128k
+preset_25 = ais-edge89-dal02.cdnstream.com/b30572_128mp3 # 25 - Radiostorm - At Work 128k
+preset_26 = 25303.live.streamtheworld.com/CANDLELIGHT_SC # 26 - Candlelight 128k
+#
 toneha = 0
 tonehf = 0
 tonela = 0
 tonelf = 0
 #
-preset = 6
-# Some preset examples
-preset_00 = 109.206.96.34:8100                       #  0 - NAXI LOVE RADIO, Belgrade, Serbia
-preset_01 = airspectrum.cdnstream1.com:8114/1648_128 #  1 - Easy Hits Florida 128k
-preset_02 = stream.hitfm.de:9050/live                #  2 - 89 HIT FM - Munichs Power Station, 128k
-preset_03 = airspectrum.cdnstream1.com:8000/1261_192 #  3 - Magic Oldies Florida
-preset_04 = airspectrum.cdnstream1.com:8008/1604_128 #  4 - Magic 60s Florida 60s Classic Rock
-preset_05 = us1.internet-radio.com:8105              #  5 - Classic Rock Florida - SHE Radio
-preset_06 = icecast.omroep.nl:80/radio1-bb-mp3       #  6 - Radio 1, NL, 192k
-preset_07 = 205.164.62.15:10032                      #  7 - 1.FM - GAIA, 64k
-preset_08 = www.doowopradio.com:8000                 #  8 - Doo-Wop Radio, 96k
-preset_09 = server-27.stream-server.nl:8192/stream   #  9 - 192 Radio Nederland, 320k
+volume = 55
 #
-# Clock offset and daylight saving time
-clk_server = pool.ntp.org                            # Time server to be used
-clk_offset = 1                                       # Offset with respect to UTC in hours
-clk_dst = 1                                          # Offset during daylight saving time (hours)
-# Screensaving Options
-disp_time = 45                                       # Turn off backlight / blank display (seconds)
-disp_blank = true                                    # Enables blanking the display
-# Some example IR codes
-ir_40BF = upvolume = 2
-ir_C03F = downvolume = 2
-# GPIO pinnings
-pin_ir = 35                                          # GPIO Pin number for IR receiver VS1838B
-pin_enc_clk = 12                                     # GPIO Pin number for rotary encoder "CLK"
-pin_enc_dt = 14                                      # GPIO Pin number for rotary encoder "DT"
-pin_enc_sw = 13                                      # GPIO Pin number for rotary encoder "SW"
-#
-pin_tft_cs = 2                                       # GPIO Pin number for TFT "CS"
-pin_tft_dc = 4                                       # GPIO Pin number for TFT "DC"
-#
-# define pins for decoder.  Examples for VS1053, I2S and Toslink
-pin_vs_cs = 5                                        # GPIO Pin number for VS1053 "CS"
-pin_vs_dcs = 32                                      # GPIO Pin number for VS1053 "DCS"
-pin_vs_dreq = 15                                     # GPIO Pin number for VS1053 "DREQ"
-#
-#pin_i2s_bck = 15                                    # GPIO Pin number for I2S "BCK"
-#pin_i2s_lck = 27                                    # GPIO Pin number for I2S "L(R)CK"
-#pin_i2s_din = 26                                    # GPIO Pin number for I2S "DIN"
-#
-#pin_i2s_spdif = 15                                  # GPIO Pin number for I2S/SPDIF (Toslink)
+wifi_00 = Trip5/mw@781001
+wifi_01 = RestrictedArea/mw@781001
