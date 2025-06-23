@@ -7,6 +7,7 @@ New version of the well known ESP32 Radio.  Now optional I2S output and SP/DIF o
 ![SAM_2922](https://github.com/Edzelf/ESP32Radio-V2/assets/18257026/a58f7b7e-cdd4-4d7f-96b8-62fa487de906)
 
 Updates:
+- 23-jun-2025: data/search.html correction for not working external page.
 - 29-apr-2025: Some corrections for SD card.  Added configurable toggle for "mute".
 - 19-mar-2025: Correction for new Espressif SDK.
 - 17-oct-2024: Experimental support for ESP32-S3. SP/DIF tested.
