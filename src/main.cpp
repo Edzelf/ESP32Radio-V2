@@ -110,10 +110,11 @@
 // 19-03-2025, ES: Correction for new Espressif SDK
 // 29-04-2025, ES: Allow special treat of "mute"-command, Pako2 wish.
 //                 Correction tracks bug on SD card, Pako2 suggestion.
+// 29-06-2025, ES: Changed I2S_COMM_FORMAT_STAND_I2MSB into I2S_COMM_FORMAT_STAND_MSB.
 
 //
 // Define the version number, the format used is the HTTP standard.
-#define VERSION     "Tue, 29 Apr 2025 10:00:00 GMT"
+#define VERSION     "Sun, 29 Jun 2025 11:45:00 GMT"
 //
 #include <Arduino.h>                                      // Standard include for Platformio Arduino projects
 #include "soc/soc.h"                                      // For brown-out detector setting
@@ -4446,7 +4447,7 @@ void playtask ( void * parameter )
     i2s_config.sample_rate            = 44100 ;                      // 44100
     i2s_config.bits_per_sample        = I2S_BITS_PER_SAMPLE_16BIT ;  // (16)
     #if ESP_ARDUINO_VERSION_MAJOR >= 2                               // New version?
-      i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2MSB ;  // Yes, use new definition
+      i2s_config.communication_format = I2S_COMM_FORMAT_STAND_MSB ;  // Yes, use new definition
     #else
       i2s_config.communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB) ;
     #endif
